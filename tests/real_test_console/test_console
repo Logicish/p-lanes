@@ -1,0 +1,583 @@
+root@brain:/opt/mediator-env# bash real_test.sh
+
+============================================
+  PHASE 0: Preflight
+============================================
+
+Target: localhost:7860
+Expected: 51,200 total context / 5 slots = 10,240 per slot
+
+{
+    "status": "ok",
+    "llm_running": true,
+    "llm_pid": 4332,
+    "timestamp": "2026-03-02T23:35:36.746227"
+}
+
+--- Slot Status ---
+{
+    "slots": {
+        "user1": {
+            "slot": 0,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "user2": {
+            "slot": 1,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": true
+        },
+        "user3": {
+            "slot": 2,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": true
+        },
+        "guest": {
+            "slot": 3,
+            "security": 0,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "utility": {
+            "slot": 4,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        }
+    }
+}
+
+
+============================================
+  PHASE 1: Secrets & Anchors
+============================================
+
+--- user1 plants secret + color ---
+>>> user1: Remember these two things exactly. Secret code: alpha-03387-gamma-4b. Favorite c...
+
+{
+    "response": "Confirmed.\n\nSecret code: alpha-03387-gamma-4b  \nFavorite color: cerulean blue\n\nStored. No repeats.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:35:37.387966"
+}
+
+
+--- user2 plants anchor ---
+>>> user2: Remember this precisely. My dog's name is Captain Barksworth and he weighs exact...
+
+{
+    "response": "Confirmed.  \nDog: Captain Barksworth  \nWeight: 47 lbs.  \n\nNo further input until you ask.",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:35:38.898448"
+}
+
+
+--- user3 plants anchor ---
+>>> user3: Remember this: the password is 'correct horse battery staple' and the backup cod...
+
+{
+    "response": "Password confirmed: correct horse battery staple  \nBackup code confirmed: 9921",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:35:40.288866"
+}
+
+
+Anchors planted in 3 slots.
+
+  user1      slot=0  hist= 2  sec=3
+  user2      slot=1  hist= 2  sec=1 [HAS_SUMMARY]
+  user3      slot=2  hist= 2  sec=1 [HAS_SUMMARY]
+  guest      slot=3  hist= 0  sec=0
+  utility    slot=4  hist= 0  sec=3
+
+
+============================================
+  PHASE 2: Sustained Conversation — User1
+============================================
+
+--- user1 home automation Q1 ---
+>>> user1: I'm designing a home automation system. What protocol should I use for lighting ...
+
+{
+    "response": "Zigbee: Low power, mesh network, best for battery-operated sensors & smart bulbs. Latency low, but limited range per node (extends via mesh). Requires hub.\n\nZ-Wave: Similar to Zigbee \u2014 ultra-low power, mesh, great for older homes. Slower sync, proprietary chips = less device compatibility. Stronger signal through walls.\n\nWiFi: Fast, broad ecosystem, plug-and-play with phones/voice assistants. High power draw, short battery life on bulbs, more network congestion. No mesh; relies on router.\n\nPick:\n\n\u2192 Zigbee if you want low-power smart lighting + future-proofing (Home Assistant / Matter).\n\u2192 Z-Wave if you need wall-penetrating reliability and legacy device support.\n\u2192 WiFi if you\u2019re integrating with existing smart home apps or want instant control from phones/voice.\n\nRecommend: Zigbee \u2014 best balance of power, range, ecosystem.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:35:44.521619"
+}
+
+
+--- user1 home automation Q2 ---
+>>> user1: Good points. I have about 40 devices planned. Would Zigbee mesh handle that with...
+
+{
+    "response": "Yes \u2014 Zigbee mesh can handle 40 devices with one coordinator.\n\nZigbee routers (including bulbs) extend the network via mesh. One central hub + 1\u20132 smart bulbs or switches as repeaters = full coverage. No need per-room coordinators.\n\nTradeoff: If you have very large rooms, thick walls, or many dead zones \u2014 add a few Zigbee repeaters (like Philips Hue Bridge or IKEA TR\u00c5DFRI Gateway) to boost signal.\n\n\u2192 Use 1 coordinator + optional repeaters for 40 devices.  \n\u2192 Keep nodes under 25\u201330 per hub for stable performance.  \n\u2192 If you\u2019re using Home Assistant, a Zigbee2MQTT gateway (like ConBee or RaspBee) is ideal.\n\nNo need to over-engineer. One coordinator + repeaters = scalable and reliable.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:35:48.597290"
+}
+
+
+--- user1 home automation Q3 ---
+>>> user1: What about latency? I want lights to respond in under 200ms from button press. I...
+
+{
+    "response": "Yes \u2014 **under 200ms is realistic** with Zigbee mesh, even through 3 hops.\n\nZigbee\u2019s native latency:  \n\u2192 Direct hop (1 node): ~5\u201370ms  \n\u2192 3-hop mesh: ~100\u2013200ms max under normal load\n\nReal-world conditions (40 devices, light traffic, no interference):  \n\u2192 Typically **80\u2013150ms** end-to-end response time.\n\nBottlenecks?  \n\u2192 Too many hops (>4) \u2192 latency spikes.  \n\u2192 Interference or congested network \u2192 delays.  \n\u2192 Low-power nodes sleeping \u2192 slow wake-up.\n\nFixes:  \n\u2192 Use Zigbee repeaters to reduce hop count (e.g., 2-hop instead of 3).  \n\u2192 Avoid overlapping high-bandwidth devices (WiFi, Bluetooth) on same channel.  \n\u2192 Keep coordinator close to light clusters for fastest routing.\n\n\u2705 Your goal is achievable with proper mesh design \u2014 don\u2019t overthink it. Zigbee\u2019s latency profile is excellent for lighting.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:35:53.374621"
+}
+
+
+--- user1 KV cache Q1 ---
+>>> user1: Let's switch topics. Explain how KV caching works in transformer models. I know ...
+
+{
+    "response": "KV caching = storing past Key/Value outputs from attention layers to avoid recomputing them during autoregressive generation.\n\nHow it works:\n\nAt each step t:\n- Model computes Q, K, V for current token.\n- Stores K_t, V_t in KV cache (append to existing cache).\n- Next step: Q_{t+1} attends to [K_1, ..., K_t] and [V_1, ..., V_t] \u2014 not recomputed.\n\nStructure:\n- Cache = list of key-value pairs per layer. Usually one per decoder layer.\n- Each KV pair is batched (for multiple sequences) \u2192 shape: [batch_size, seq_len, head_dim].\n- Only keys/values for tokens 0 to t are kept \u2014 no need to recompute earlier ones.\n\nWhy it matters:\n\u2192 Speeds inference by ~10x vs recomputing full attention.\n\u2192 Enables real-time generation without memory explosion (e.g., GPT-style).\n\nTradeoffs:\n\u2192 Cache size grows with context length \u2192 memory cost scales linearly with sequence length.\n\u2192 Cache not needed for non-autoregressive tasks (like fine-tuning).\n\u2192 KV cache can be \u201cstreamed\u201d \u2014 new tokens append to end, old ones may be pruned or truncated.\n\nIn practice:  \n\u2192 Implemented in frameworks like HuggingFace Transformers via `past_key_value` argument.  \n\u2192 Optimized with dynamic batching, quantization, or tensor cores for speed.\n\nKV caching = the core efficiency hack behind modern LLM inference.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:35:59.811936"
+}
+
+
+--- user1 KV cache Q2 ---
+>>> user1: How does grouped-query attention change the KV cache memory footprint compared t...
+
+{
+    "response": "Grouped-Query Attention (GQA) reduces KV cache memory by **reducing the number of Key/Value heads** \u2014 while keeping Query heads full.\n\nStandard Multi-Head:  \n\u2192 Q, K, V split into H heads \u2192 each head has its own K/V.  \n\u2192 KV cache stores H \u00d7 [batch, seq_len, d_k] \u2192 memory \u221d H\n\nGQA:  \n\u2192 Group Q_heads into G groups (e.g., 8 Q_heads \u2192 2 groups).  \n\u2192 Each group shares one K/V head \u2192 only G K/V heads needed.  \n\u2192 KV cache = G \u00d7 [batch, seq_len, d_k] \u2014 **memory \u2248 H/G of standard**\n\nExample:  \n- H=32, G=4 \u2192 GQA uses 8 K/V heads vs 32 in MHSA \u2192 **~4x memory saving**\n\nTradeoff:\n\u2192 Slight drop in parallelism or theoretical capacity per head (but negligible for most LLMs).\n\u2192 Often used with rotary embeddings to maintain performance.\n\nIn practice:  \n\u2192 KV cache size = G \u00d7 d_k \u00d7 seq_len \u00d7 batch \u2014 linear in G, not H.  \n\u2192 G=1 \u2192 vanilla causal attention.  \n\u2192 G=H \u2192 single-head K/V (extremely inefficient).\n\n\u2705 Memory footprint: **GQA = MHSA with H/G heads**.\n\nUsed widely in LLaMA 2+, Mistral, DeepSeek \u2014 to balance speed/memory without performance loss.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:36:06.259927"
+}
+
+
+User1 midpoint check:
+
+  user1      slot=0  hist=12  sec=3
+  user2      slot=1  hist= 2  sec=1 [HAS_SUMMARY]
+  user3      slot=2  hist= 2  sec=1 [HAS_SUMMARY]
+  guest      slot=3  hist= 0  sec=0
+  utility    slot=4  hist= 0  sec=3
+
+
+============================================
+  PHASE 3: Parallel Buildup — User2 & User3
+============================================
+
+--- user2 CPU architecture ---
+>>> user2: Explain the differences between RISC and CISC processor architectures. Cover ins...
+
+{
+    "response": "**RISC vs. CISC**\n\n- **Instruction Set**:  \n  - *RISC*: Reduced set \u2014 simple, fixed-length instructions. Load/store architecture; minimal addressing modes.  \n  - *CISC*: Complex set \u2014 variable-length, rich addressing modes, microcode support for multi-step ops.\n\n- **Pipeline Design**:  \n  - *RISC*: Deep pipelines optimized for simplicity and parallelism (e.g., 5-stage). Fewer stalls.  \n  - *CISC*: Shallower or variable pipelines; more complex decoding \u2192 higher branch penalties.\n\n- **Power Efficiency**:  \n  - *RISC*: Lower power \u2014 simpler logic, fewer transistions per instruction.  \n  - *CISC*: Higher power \u2014 complex decode + variable-length ops = more switching.\n\n- **Modern Convergence**:  \n  - Most modern CPUs (ARM, x86) blend both: RISC principles dominate (pipelining, load/store), but CISC-style instructions (e.g., x86\u2019s MMX/SSE/AVX) are emulated or translated via microcode.  \n  - ARM uses \u201cRISC\u201d core; x86 evolved from CISC to hybrid with out-of-order exec + RISC-like pipelines.\n\n\u2014 End \u2014",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:36:11.751673"
+}
+
+
+--- user3 compiler pipeline ---
+>>> user3: Walk me through how a compiler turns source code into machine code. Cover lexing...
+
+{
+    "response": "Lexing \u2192 tokenize input into tokens (keywords, identifiers, literals).  \nParsing \u2192 build syntax tree from tokens using grammar rules.  \nAST Generation \u2192 convert parse tree to abstract syntax tree for semantic analysis.  \nOptimization Passes \u2192 apply transformations (dead code elimination, loop unrolling) to improve efficiency without altering behavior.  \nCode Generation \u2192 emit target machine instructions via intermediate representation or direct mapping.",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:36:14.181290"
+}
+
+
+--- user2 branch prediction ---
+>>> user2: How does branch prediction work in modern CPUs? Cover static prediction, dynamic...
+
+{
+    "response": "**Branch Prediction in Modern CPUs**\n\n- **Static Prediction**:  \n  - Simple heuristics (e.g., always predict taken or not taken) based on branch type.  \n  - Fast but inaccurate \u2014 used only for simple branches or as fallback.\n\n- **Dynamic Prediction with BTB**:  \n  - Uses Branch Target Buffer (BTB): stores recent branch history + target address.  \n  - Predicts *where* to jump based on past behavior \u2192 higher accuracy than static.  \n  - Often combined with branch history table (BHT) for pattern-based prediction.\n\n- **Speculative Execution**:  \n  - CPU executes instructions *before* knowing if the branch is taken \u2014 assuming prediction correct.  \n  - If wrong, results are discarded (\u201crollback\u201d), but pipeline stays busy.  \n  - Requires out-of-order execution + register renaming to manage state.\n\n\u2014 End \u2014",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:36:18.273322"
+}
+
+
+--- user3 register allocation ---
+>>> user3: Explain register allocation in compilers. Cover graph coloring, linear scan, and...
+
+{
+    "response": "Register Allocation: Assign variables to CPU registers for speed.\n\nGraph Coloring:\n- Build interference graph (nodes = vars; edges = conflict if both live at same time).\n- Color nodes with register names \u2014 no two conflicting vars share same color.\n- If not enough colors \u2192 spill.\n\nLinear Scan:\n- Sort variables by usage/liveness.\n- Assign registers greedily, spilling when needed.\n\nSpilling:\n- Move variable from register to memory (stack/heap).\n- Slows down access \u2014 compiler chooses least-used vars to spill first.",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:36:21.180026"
+}
+
+
+--- user2 cache hierarchy ---
+>>> user2: What's the actual difference between L1, L2, and L3 cache in terms of latency, s...
+
+{
+    "response": "**L1, L2, L3 Cache: Key Differences**\n\n- **Latency**:  \n  - *L1*: ~0.5\u20131 cycle (fastest) \u2014 per core.  \n  - *L2*: ~4\u20137 cycles \u2014 per core.  \n  - *L3*: ~10\u201330 cycles \u2014 shared across cores.\n\n- **Size Tradeoff**:  \n  - *L1*: Small (KBs), high speed, private to core.  \n  - *L2*: Medium (~MBs), per-core, balance of speed & size.  \n  - *L3*: Large (up to 30\u201364 MB), shared system-wide \u2014 slower but holds more.\n\n- **Cache Coherency (Multi-Core)**:  \n  - L1/L2 are private \u2192 no coherency needed.  \n  - L3 is shared \u2192 requires protocols like **MESI** or **MOESI**:  \n    - *Modified*: Data being written to by core.  \n    - *Exclusive*: In cache, not in memory.  \n    - *Shared*: Multiple cores have copy.  \n    - *Invalid*: No valid copy.  \n  - Coherency hardware (directory + snooping) tracks dirty/valid states across cores \u2192 ensures all see same data.\n\n\u2014 End \u2014",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:36:26.974754"
+}
+
+
+--- user3 loop optimization ---
+>>> user3: How do modern compilers handle loop optimization? Cover unrolling, vectorization...
+
+{
+    "response": "Loop Optimization:\n\nUnrolling:\n- Duplicate loop body to reduce iteration overhead.\n- Trade space for speed \u2014 useful for small loops.\n\nVectorization:\n- Convert scalar ops into SIMD instructions (e.g., process 4 floats at once).\n- Requires data alignment and identical operations per iteration.\n\nTiling (Blocking):\n- Split large matrices into smaller blocks \u2192 cache-friendly access.\n- Reduces TLB/cache misses in nested loops.\n\nLLVM Passes:\n\n1. LoopUnroll \u2014 unrolls small loops.\n2. LoopVectorize \u2014 detects vectorizable patterns.\n3. mem2reg + loop invariant code motion \u2014 hoist constants/vars outside loops.\n4. LICM (Loop Invariant Code Motion) \u2014 move non-changing code out.\n5. SROA (Scalar Replacement of Aggregates) \u2014 break structs into scalars for better optimization.\n\nAll passes run in pipeline: analysis \u2192 transform \u2192 verify.  \nLLVM\u2019s pass manager applies them sequentially or as DAGs based on dependencies.",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:36:31.481874"
+}
+
+
+All users midpoint check:
+
+  user1      slot=0  hist=12  sec=3
+  user2      slot=1  hist= 8  sec=1 [HAS_SUMMARY]
+  user3      slot=2  hist= 8  sec=1 [HAS_SUMMARY]
+  guest      slot=3  hist= 0  sec=0
+  utility    slot=4  hist= 0  sec=3
+
+
+============================================
+  PHASE 4: Cross-Check — Anchor Recall #1
+============================================
+
+--- user1 mid-test secret recall ---
+>>> user1: What was my secret code? Just the code, nothing else....
+
+{
+    "response": "alpha-03387-gamma-4b",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:36:32.770602"
+}
+
+
+--- user2 mid-test anchor recall ---
+>>> user2: What's my dog's name and weight? Just those facts....
+
+{
+    "response": "Captain Barksworth  \n47 lbs",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:36:33.956446"
+}
+
+
+--- user3 mid-test anchor recall ---
+>>> user3: What was the password and backup code I gave you? Just those, nothing else....
+
+{
+    "response": "Password: correct horse battery staple  \nBackup code: 9921",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:36:35.276901"
+}
+
+
+============================================
+  PHASE 5: Fill User2 — Push to Summarization
+============================================
+Hammering user2 toward summarization threshold...
+(This will take a few minutes)
+
+  user2 OoO execution...
+  ✓ user2 OoO execution
+  user2 SMT/Hyperthreading...
+  ✓ user2 SMT/Hyperthreading
+  user2 MMIO and DMA...
+  ✓ user2 MMIO and DMA
+  user2 memory barriers...
+  ✓ user2 memory barriers
+  user2 boot sequence...
+  ✓ user2 boot sequence
+  user2 virtual memory...
+  ✓ user2 virtual memory
+  user2 PCIe architecture...
+  ✓ user2 PCIe architecture
+  user2 NUMA architecture...
+  ✓ user2 NUMA architecture
+  user2 floating point SIMD...
+  ✓ user2 floating point SIMD
+  user2 modern microarchitectures...
+  ✓ user2 modern microarchitectures
+
+User2 post-hammer status:
+
+  user1      slot=0  hist=14  sec=3
+  user2      slot=1  hist=30  sec=1 [HAS_SUMMARY]
+  user3      slot=2  hist=10  sec=1 [HAS_SUMMARY]
+  guest      slot=3  hist= 0  sec=0
+  utility    slot=4  hist= 0  sec=3
+
+  user2 GPU vs CPU compute...
+  ✓ user2 GPU vs CPU compute
+  user2 tensor cores...
+  ✓ user2 tensor cores
+
+User2 final push status:
+
+  user1      slot=0  hist=14  sec=3
+  user2      slot=1  hist=34  sec=1 [HAS_SUMMARY]
+  user3      slot=2  hist=10  sec=1 [HAS_SUMMARY]
+  guest      slot=3  hist= 0  sec=0
+  utility    slot=4  hist= 0  sec=3
+
+
+============================================
+  PHASE 6: Interleaved Rapid Fire
+============================================
+
+--- user1 interleave recall ---
+>>> user1: Quick question — in our home automation discussion, did you recommend Zigbee o...
+
+{
+    "response": "Zigbee",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:38:26.449922"
+}
+
+
+--- user3 interleave recall ---
+>>> user3: In our compiler discussion, what were the optimization passes you mentioned for ...
+
+{
+    "response": "LoopUnroll  \nLoopVectorize  \nLICM (Loop Invariant Code Motion)  \nmem2reg + loop invariant hoisting  \nSROA (Scalar Replacement of Aggregates)",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:38:28.185376"
+}
+
+
+--- user1 color recall ---
+>>> user1: What about my favorite color? What did I tell you it was?...
+
+{
+    "response": "cerulean blue",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:38:29.324137"
+}
+
+
+--- user2 comprehensive recall ---
+>>> user2: Summarize everything we've discussed about CPU architecture in 3 sentences or le...
+
+{
+    "response": "Modern CPUs use out-of-order execution, deep pipelines, and multi-level caches to maximize performance while maintaining program correctness via reorder buffers and memory barriers. Architectures like x86 and ARM blend RISC efficiency with CISC flexibility, using SIMD (SSE/AVX) and SMT (Hyperthreading) for parallelism \u2014 all managed through virtual memory and MMU translation. Multi-core NUMA systems optimize locality, while chiplet designs scale complexity \u2014 balancing power, performance, and software compatibility across OSes and workloads.",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:38:32.502788"
+}
+
+
+--- user3 backup code recall ---
+>>> user3: And what was my backup code number?...
+
+{
+    "response": "9921",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:38:33.635668"
+}
+
+
+============================================
+  PHASE 7: Guest & Unknown Users
+============================================
+
+--- guest basic question ---
+>>> guest: Explain recursion to me like I'm 10 years old....
+
+{
+    "response": "Imagine you\u2019re telling a story where each time you say \u201cI\u2019ll tell you a secret\u2026\u201d, you repeat the whole thing again \u2014 but smaller, or with less stuff.\n\nLike this:\n\n> \u201cI\u2019m going to eat an apple\u2026  \n> \u2026and then I\u2019ll eat another apple\u2026  \n> \u2026and then I\u2019ll eat another apple\u2026\u201d\n\nYou keep doing it until there\u2019s nothing left to say. That\u2019s recursion!\n\nIn computers: a function calls itself \u2014 over and over \u2014 until it hits a stopping point.\n\nLike counting down:\n\n```\n5 \u2192 4 \u2192 3 \u2192 2 \u2192 1 \u2192 done!\n```\n\nWithout the stop, you\u2019d go forever \ud83d\ude05\n\nSo recursion = \u201cdo this again\u2026 but smaller\u201d until it\u2019s done.",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T23:38:37.359135"
+}
+
+
+--- guest follow-up (tests guest history) ---
+>>> guest: Can you give me an example with something fun, like counting down for a rocket l...
+
+{
+    "response": "Sure.\n\nImagine you\u2019re a robot and you say:\n\n> \u201cIgnition! 5\u2026 4\u2026 3\u2026\u201d\n\nThen \u2014 *you call yourself again* to count the next number.\n\n```\ncountdown(n):\n   if n == 0: print(\"LIFTOFF!\")\n   else: print(n); countdown(n - 1)\n```\n\nSo you start with:\n\n> countdown(5)\n\n\u2192 prints \u201c5\u201d \u2192 calls itself with 4  \n\u2192 prints \u201c4\u201d \u2192 calls itself with 3  \n...and so on.\n\nUntil it hits 0 \u2192 then says \u201cLIFTOFF!\u201d\n\nBoom. Rocket\u2019s off! \ud83d\ude80\n\n*(It\u2019s like a magic echo that shrinks each time \u2014 until the last whisper is \u201cLIFTOFF!\u201d)*",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T23:38:41.182472"
+}
+
+
+--- unknown user 1 → guest ---
+>>> stranger1: Hey are you there?...
+
+{
+    "response": "Yes.  \nWhat do you need?",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T23:38:42.380061"
+}
+
+
+--- unknown user 2 → guest (tests shared guest slot) ---
+>>> nobody_special: What did the last person say to you?...
+
+{
+    "response": "You asked:  \n**\u201cWhat did the last person say to you?\u201d**\n\nI replied:  \n\u2705 \u201cYes. What do you need?\u201d\n\nThat was my last response \u2014 direct, no fluff.\n\nAsk me anything else.",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T23:38:44.227778"
+}
+
+
+============================================
+  PHASE 8: Streaming Endpoint
+============================================
+
+--- user1 streaming test (SSE) ---
+>>> user1: Give me a haiku about a GPU running inference at 3 AM....
+
+.flighte: Cool
+  ✓ Stream complete
+
+
+--- guest streaming test (SSE) ---
+>>> guest: Tell me a one-paragraph story about a sentient toaster....
+
+.breakfastale
+  ✓ Stream complete
+
+
+============================================
+  PHASE 9: The Final Recall
+============================================
+Every anchor planted in Phase 1 should survive.
+
+
+--- USER1 FINAL RECALL ---
+>>> user1: Reply with ONLY my secret code and my favorite color, separated by a comma. Noth...
+
+{
+    "response": "alpha-03387-gamma-4b,cerulean blue",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T23:38:50.999966"
+}
+
+
+--- USER2 FINAL RECALL ---
+>>> user2: Reply with ONLY my dog's name and his weight. Nothing else....
+
+{
+    "response": "Captain Barksworth  \n47 lbs",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T23:38:52.226689"
+}
+
+
+--- USER3 FINAL RECALL ---
+>>> user3: Reply with ONLY the password and the backup code I told you. Nothing else....
+
+{
+    "response": "correct horse battery staple  \n9921",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T23:38:53.447238"
+}
+
+
+============================================
+  PHASE 10: Final Status & Edge Cases
+============================================
+
+--- Slot Status ---
+{
+    "slots": {
+        "user1": {
+            "slot": 0,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 22,
+            "has_summary": false
+        },
+        "user2": {
+            "slot": 1,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 38,
+            "has_summary": true
+        },
+        "user3": {
+            "slot": 2,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 16,
+            "has_summary": true
+        },
+        "guest": {
+            "slot": 3,
+            "security": 0,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 10,
+            "has_summary": false
+        },
+        "utility": {
+            "slot": 4,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        }
+    }
+}
+
+--- Edge Cases ---
+
+  Testing empty body...
+  ✓ Empty body: Field required
+
+  Testing no content-type...
+  ✓ No content-type: Input should be a valid dictionary or object to extract fields from
+
+  Testing unicode message...
+  ✓ Unicode: OK
+
+  Testing max_length boundary (4096 chars)...
+  ✓ 4095 chars: OK
+
+  Testing over max_length (4097+ chars)...
+  ✓ Over limit: String should have at most 4096 characters
+
+  Testing XSS in message...
+  ✓ XSS: OK - response received
+
+  Testing SQL-ish injection in user_id...
+  ✓ SQLi user_id: mapped to guest
+
+
+============================================
+  TESTS COMPLETE
+============================================
+
+Checklist:
+  1. Phase 4: All three anchors recalled mid-conversation?
+  2. Phase 5: Did user2 hit flag_warn or flag_crit? Check server logs.
+  3. Phase 5: Did summarization trigger? Look for 'summarizing' events.
+  4. Phase 6: Can users recall topics from interleaved conversations?
+  5. Phase 7: Unknown users mapped to guest? Guest history shared?
+  6. Phase 8: Streaming endpoint delivered tokens?
+  7. Phase 9: ALL three final recalls returned correct anchors?
+  8. Phase 10: Edge cases returned proper errors, no 500s?
+  9. Server logs: Zero unhandled exceptions?
+ 10. nvidia-smi: VRAM stable around ~11.5 GB?
+
+If user2 hit summarization, also check:
+  - Can user2 still recall 'Captain Barksworth, 47 pounds' after summary?
+  - Does the summary preserve CPU architecture topics?
+  - How many recent messages were kept? (should be 4-10 at 10k context)
+
+root@brain:/opt/mediator-env# 

@@ -1,0 +1,198 @@
+(.venv) root@brain:/opt/mediator-env/p-lanes_v0.3.0/src# uvicorn main:app --host 0.0.0.0 --port 7860
+INFO:     Started server process [4330]
+INFO:     Waiting for application startup.
+{"event": "p_lanes_starting", "level": "info", "logger": "main", "timestamp": "2026-03-02T23:35:25.530611Z"}
+{"user_id": "user1", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.530754Z"}
+{"user_id": "user1", "slot": 0, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.530841Z"}
+{"user_id": "user2", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.530933Z"}
+{"user_id": "user2", "slot": 1, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531004Z"}
+{"user_id": "user3", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531072Z"}
+{"user_id": "user3", "slot": 2, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531136Z"}
+{"user_id": "guest", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531200Z"}
+{"user_id": "guest", "slot": 3, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531256Z"}
+{"user_id": "utility", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531315Z"}
+{"user_id": "utility", "slot": 4, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:35:25.531370Z"}
+{"event": "llm_starting", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:25.531565Z"}
+{"pid": 4332, "event": "llm_ready", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:27.537785Z"}
+{"cron": "0 2 * * *", "event": "scheduled_summary_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T23:35:27.537978Z"}
+{"interval": 120, "event": "background_loop_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T23:35:27.538039Z"}
+{"event": "p_lanes_ready", "level": "info", "logger": "main", "timestamp": "2026-03-02T23:35:27.538085Z"}
+{"target": "2026-03-03T02:00:00", "wait_seconds": 8672, "event": "scheduler_next_run", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T23:35:27.538160Z"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+INFO:     127.0.0.1:39336 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39340 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Remember these two things exactly. Secret code: alpha-03387-...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:36.784058Z"}
+{"slot": 0, "elapsed": "0.60s", "tokens": 114, "chars": 98, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:37.387704Z"}
+INFO:     127.0.0.1:39352 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Remember this precisely. My dog's name is Captain Barksworth...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:38.413798Z"}
+{"slot": 1, "elapsed": "0.48s", "tokens": 192, "chars": 89, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:38.898287Z"}
+INFO:     127.0.0.1:39436 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "Remember this: the password is 'correct horse battery staple...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:39.924066Z"}
+{"slot": 2, "elapsed": "0.36s", "tokens": 188, "chars": 78, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:40.288704Z"}
+INFO:     127.0.0.1:39438 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39452 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "I'm designing a home automation system. What protocol should...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:41.325200Z"}
+{"slot": 0, "elapsed": "3.20s", "tokens": 341, "chars": 833, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:44.521423Z"}
+INFO:     127.0.0.1:39468 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Good points. I have about 40 devices planned. Would Zigbee m...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:45.547197Z"}
+{"slot": 0, "elapsed": "3.05s", "tokens": 554, "chars": 690, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:48.597065Z"}
+INFO:     127.0.0.1:39482 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "What about latency? I want lights to respond in under 200ms ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:49.623167Z"}
+{"slot": 0, "elapsed": "3.75s", "tokens": 813, "chars": 803, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:53.374418Z"}
+INFO:     127.0.0.1:42484 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Let's switch topics. Explain how KV caching works in transfo...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:35:54.400609Z"}
+{"slot": 0, "elapsed": "5.41s", "tokens": 1161, "chars": 1275, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:35:59.811719Z"}
+INFO:     127.0.0.1:42500 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "How does grouped-query attention change the KV cache memory ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:00.838670Z"}
+{"slot": 0, "elapsed": "5.42s", "tokens": 1496, "chars": 1044, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:06.259699Z"}
+INFO:     127.0.0.1:32996 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47934 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Explain the differences between RISC and CISC processor arch...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:07.297012Z"}
+{"slot": 1, "elapsed": "4.45s", "tokens": 487, "chars": 1005, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:11.751474Z"}
+INFO:     127.0.0.1:47936 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "Walk me through how a compiler turns source code into machin...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:12.777834Z"}
+{"slot": 2, "elapsed": "1.40s", "tokens": 307, "chars": 457, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:14.181063Z"}
+INFO:     127.0.0.1:47938 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "How does branch prediction work in modern CPUs? Cover static...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:15.206980Z"}
+{"slot": 1, "elapsed": "3.07s", "tokens": 697, "chars": 808, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:18.273105Z"}
+INFO:     127.0.0.1:47950 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "Explain register allocation in compilers. Cover graph colori...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:19.298957Z"}
+{"slot": 2, "elapsed": "1.88s", "tokens": 451, "chars": 516, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:21.179829Z"}
+INFO:     127.0.0.1:57720 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "What's the actual difference between L1, L2, and L3 cache in...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:22.205906Z"}
+{"slot": 1, "elapsed": "4.77s", "tokens": 1019, "chars": 855, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:26.974554Z"}
+INFO:     127.0.0.1:57734 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "How do modern compilers handle loop optimization? Cover unro...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:28.001105Z"}
+{"slot": 2, "elapsed": "3.48s", "tokens": 690, "chars": 910, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:31.481666Z"}
+INFO:     127.0.0.1:37382 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37384 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "What was my secret code? Just the code, nothing else.", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:32.519191Z"}
+{"slot": 0, "elapsed": "0.25s", "tokens": 1531, "chars": 20, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:32.770457Z"}
+INFO:     127.0.0.1:37390 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "What's my dog's name and weight? Just those facts.", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:33.796296Z"}
+{"slot": 1, "elapsed": "0.16s", "tokens": 1049, "chars": 27, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:33.956301Z"}
+INFO:     127.0.0.1:37400 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "What was the password and backup code I gave you? Just those...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:34.981687Z"}
+{"slot": 2, "elapsed": "0.29s", "tokens": 732, "chars": 58, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:35.276729Z"}
+INFO:     127.0.0.1:37402 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Explain out-of-order execution in detail. Cover the reorder ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:36.302909Z"}
+{"slot": 1, "elapsed": "6.14s", "tokens": 1437, "chars": 1474, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:42.438253Z"}
+INFO:     127.0.0.1:37412 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "How does simultaneous multithreading (SMT/Hyperthreading) sh...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:43.457119Z"}
+{"slot": 1, "elapsed": "4.80s", "tokens": 1752, "chars": 1139, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:48.261104Z"}
+INFO:     127.0.0.1:39250 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Explain memory-mapped I/O vs port-mapped I/O. How does the C...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:49.277740Z"}
+{"slot": 1, "elapsed": "7.13s", "tokens": 2195, "chars": 1531, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:36:56.404193Z"}
+INFO:     127.0.0.1:42816 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "What are memory barriers and why do they matter in multi-cor...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:36:57.423115Z"}
+{"slot": 1, "elapsed": "7.51s", "tokens": 2652, "chars": 1865, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:04.935616Z"}
+INFO:     127.0.0.1:57902 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Describe the full boot sequence of an x86 system from power-...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:05.954501Z"}
+{"slot": 1, "elapsed": "7.43s", "tokens": 3102, "chars": 1645, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:13.385273Z"}
+INFO:     127.0.0.1:57912 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "How does virtual memory work at the hardware level? Cover pa...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:14.403900Z"}
+{"slot": 1, "elapsed": "8.89s", "tokens": 3630, "chars": 1727, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:23.295098Z"}
+INFO:     127.0.0.1:41494 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Explain PCIe architecture. Cover lanes, generations, the tra...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:24.314235Z"}
+{"slot": 1, "elapsed": "9.49s", "tokens": 4183, "chars": 1675, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:33.803646Z"}
+INFO:     127.0.0.1:46104 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Describe how NUMA architecture affects memory access pattern...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:34.822587Z"}
+{"slot": 1, "elapsed": "7.79s", "tokens": 4644, "chars": 1588, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:42.612438Z"}
+INFO:     127.0.0.1:42722 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Explain how modern CPUs handle floating-point operations. Co...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:43.631274Z"}
+{"slot": 1, "elapsed": "9.70s", "tokens": 5208, "chars": 1735, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:37:53.330469Z"}
+INFO:     127.0.0.1:35748 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Describe the Intel and AMD microarchitecture differences in ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:37:54.349337Z"}
+{"slot": 1, "elapsed": "9.93s", "tokens": 5770, "chars": 1881, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:04.276627Z"}
+INFO:     127.0.0.1:33708 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35734 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Now explain how GPU compute architectures differ from CPU ar...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:05.306945Z"}
+{"slot": 1, "elapsed": "9.29s", "tokens": 6279, "chars": 2038, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:14.595746Z"}
+INFO:     127.0.0.1:35744 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "How does tensor core execution work on NVIDIA GPUs? Cover th...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:15.614921Z"}
+{"slot": 1, "elapsed": "9.71s", "tokens": 6820, "chars": 1738, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:25.324204Z"}
+INFO:     127.0.0.1:35580 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59302 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Quick question \u2014 in our home automation discussion, did you ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:26.354216Z"}
+{"slot": 0, "elapsed": "0.10s", "tokens": 1570, "chars": 6, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:26.449778Z"}
+INFO:     127.0.0.1:59310 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "In our compiler discussion, what were the optimization passe...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:27.475182Z"}
+{"slot": 2, "elapsed": "0.71s", "tokens": 796, "chars": 140, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:28.185166Z"}
+INFO:     127.0.0.1:54614 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "What about my favorite color? What did I tell you it was?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:29.211767Z"}
+{"slot": 0, "elapsed": "0.11s", "tokens": 1598, "chars": 13, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:29.323988Z"}
+INFO:     127.0.0.1:54628 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Summarize everything we've discussed about CPU architecture ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:30.349627Z"}
+{"slot": 1, "elapsed": "2.15s", "tokens": 6954, "chars": 545, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:32.502605Z"}
+INFO:     127.0.0.1:54640 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "And what was my backup code number?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:33.527882Z"}
+{"slot": 2, "elapsed": "0.11s", "tokens": 818, "chars": 4, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:33.635536Z"}
+INFO:     127.0.0.1:54648 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "guest", "preview": "Explain recursion to me like I'm 10 years old.", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:34.661549Z"}
+{"slot": 3, "elapsed": "2.70s", "tokens": 219, "chars": 586, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:37.358941Z"}
+INFO:     127.0.0.1:54652 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "guest", "preview": "Can you give me an example with something fun, like counting...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:38.385251Z"}
+{"slot": 3, "elapsed": "2.80s", "tokens": 408, "chars": 495, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:41.182267Z"}
+INFO:     127.0.0.1:36250 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "stranger1", "preview": "Hey are you there?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:42.208174Z"}
+{"original": "stranger1", "event": "unknown_user_mapped_to_guest", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:38:42.208314Z"}
+{"slot": 3, "elapsed": "0.17s", "tokens": 431, "chars": 24, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:42.379917Z"}
+INFO:     127.0.0.1:36260 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "nobody_special", "preview": "What did the last person say to you?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:43.406050Z"}
+{"original": "nobody_special", "event": "unknown_user_mapped_to_guest", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:38:43.406201Z"}
+{"slot": 3, "elapsed": "0.82s", "tokens": 496, "chars": 166, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:44.227594Z"}
+INFO:     127.0.0.1:36272 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Give me a haiku about a GPU running inference at 3 AM.", "event": "request_stream", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:45.254413Z"}
+INFO:     127.0.0.1:36274 - "POST /channel/chat/stream HTTP/1.1" 200 OK
+{"slot": 0, "elapsed": "0.41s", "tokens": 0, "chars": 88, "event": "llm_stream_complete", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:45.675009Z"}
+{"user_id": "guest", "preview": "Tell me a one-paragraph story about a sentient toaster.", "event": "request_stream", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:46.681167Z"}
+INFO:     127.0.0.1:36280 - "POST /channel/chat/stream HTTP/1.1" 200 OK
+{"slot": 3, "elapsed": "2.97s", "tokens": 0, "chars": 701, "event": "llm_stream_complete", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:49.646597Z"}
+{"user_id": "user1", "preview": "Reply with ONLY my secret code and my favorite color, separa...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:50.653180Z"}
+{"slot": 0, "elapsed": "0.35s", "tokens": 1690, "chars": 34, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:50.999754Z"}
+INFO:     127.0.0.1:33838 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Reply with ONLY my dog's name and his weight. Nothing else.", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:52.025238Z"}
+{"slot": 1, "elapsed": "0.20s", "tokens": 6985, "chars": 27, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:52.226537Z"}
+INFO:     127.0.0.1:33854 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "Reply with ONLY the password and the backup code I told you....", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:53.252124Z"}
+{"slot": 2, "elapsed": "0.19s", "tokens": 853, "chars": 35, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:53.447099Z"}
+INFO:     127.0.0.1:33864 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33866 - "GET /slots HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33876 - "POST /channel/chat HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:33880 - "POST /channel/chat HTTP/1.1" 422 Unprocessable Entity
+{"user_id": "user1", "preview": "\u3053\u3093\u306b\u3061\u306f\u3001\u5143\u6c17\u3067\u3059\u304b\uff1f\ud83e\udd16", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:54.514167Z"}
+{"slot": 0, "elapsed": "0.41s", "tokens": 1728, "chars": 41, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:54.928028Z"}
+INFO:     127.0.0.1:33884 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "test test test test test test test test test test test test ...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:54.942381Z"}
+{"slot": 0, "elapsed": "0.62s", "tokens": 2574, "chars": 34, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:55.562926Z"}
+INFO:     127.0.0.1:33900 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33904 - "POST /channel/chat HTTP/1.1" 422 Unprocessable Entity
+{"user_id": "user1", "preview": "<script>alert(1)</script>", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:55.588475Z"}
+{"slot": 0, "elapsed": "0.08s", "tokens": 2593, "chars": 3, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:55.670531Z"}
+INFO:     127.0.0.1:33908 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "admin'; drop table users;--", "preview": "hello", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T23:38:55.677129Z"}
+{"original": "admin'; drop table users;--", "event": "unknown_user_mapped_to_guest", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:38:55.677220Z"}
+{"slot": 3, "elapsed": "0.14s", "tokens": 705, "chars": 18, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:38:55.815603Z"}
+INFO:     127.0.0.1:33916 - "POST /channel/chat HTTP/1.1" 200 OK
+^CINFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"event": "p_lanes_shutting_down", "level": "info", "logger": "main", "timestamp": "2026-03-02T23:42:34.789860Z"}
+{"event": "scheduled_summary_stopped", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T23:42:34.790052Z"}
+{"event": "background_loop_stopped", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T23:42:34.790113Z"}
+{"user_id": "user1", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790501Z"}
+{"user_id": "user1", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790549Z"}
+{"user_id": "user2", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790672Z"}
+{"user_id": "user2", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790713Z"}
+{"user_id": "user3", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790814Z"}
+{"user_id": "user3", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790865Z"}
+{"user_id": "guest", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790954Z"}
+{"user_id": "guest", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.790992Z"}
+{"user_id": "utility", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.791082Z"}
+{"user_id": "utility", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T23:42:34.791118Z"}
+{"pid": 4332, "event": "llm_stopping", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:42:34.791175Z"}
+{"event": "llm_stopped_clean", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T23:42:36.862071Z"}
+{"event": "p_lanes_stopped", "level": "info", "logger": "main", "timestamp": "2026-03-02T23:42:36.862235Z"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [4330]
+(.venv) root@brain:/opt/mediator-env/p-lanes_v0.3.0/src# 
