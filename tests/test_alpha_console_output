@@ -1,0 +1,518 @@
+# === prestart ===
+root@brain:~# nvidia-smi
+Mon Mar  2 20:20:59 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   33C    P8              8W /  180W |      34MiB /  16311MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+root@brain:~# 
+
+# === p-lanes start ===
+(.venv) root@brain:/opt/mediator-env/p-lanes_v0.3.0# uvicorn main:app --host 0.0.0.0 --port 7860
+INFO:     Started server process [1610]
+INFO:     Waiting for application startup.
+{"event": "p_lanes_starting", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:21:18.442392Z"}
+{"user_id": "user1", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442535Z"}
+{"user_id": "user1", "slot": 0, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442622Z"}
+{"user_id": "user2", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442705Z"}
+{"user_id": "user2", "slot": 1, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442774Z"}
+{"user_id": "user3", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442847Z"}
+{"user_id": "user3", "slot": 2, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442915Z"}
+{"user_id": "guest", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442981Z"}
+{"user_id": "guest", "slot": 3, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443041Z"}
+{"user_id": "utility", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443105Z"}
+{"user_id": "utility", "slot": 4, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443162Z"}
+{"event": "llm_starting", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:21:18.443357Z"}
+{"pid": 1612, "event": "llm_ready", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:21:20.448894Z"}
+{"cron": "0 2 * * *", "event": "scheduled_summary_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449084Z"}
+{"interval": 120, "event": "background_loop_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449146Z"}
+{"event": "p_lanes_ready", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:21:20.449192Z"}
+{"target": "2026-03-03T02:00:00", "wait_seconds": 20319, "event": "scheduler_next_run", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449309Z"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:21:41 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   33C    P8              7W /  180W |   12488MiB /  16311MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12446MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~#      
+
+# === test start ===
+root@brain:/opt/mediator-env# bash test_alpha.sh
+
+============================================
+  TEST 1: Health Check
+============================================
+
+{
+    "status": "ok",
+    "llm_running": true,
+    "llm_pid": 1612,
+    "timestamp": "2026-03-02T20:22:36.727265"
+}
+
+
+============================================
+  TEST 2: Slot Status (baseline)
+============================================
+
+{
+    "slots": {
+        "user1": {
+            "slot": 0,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "user2": {
+            "slot": 1,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "user3": {
+            "slot": 2,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "guest": {
+            "slot": 3,
+            "security": 0,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "utility": {
+            "slot": 4,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        }
+    }
+}
+
+
+============================================
+  TEST 3: User1 — Store a secret
+============================================
+
+--- user1 stores secret ---
+>>> user1: Remember this secret code exactly: alpha-03387-gamma-4b. This is important. Conf...
+
+{
+    "response": "alpha-03387-gamma-4b \u2014 confirmed stored.  \nNo questions. No repeats.  \nYou\u2019re safe to move forward.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T20:22:37.378323"
+}
+
+
+============================================
+  TEST 4: User1 — Casual conversation (different topic)
+============================================
+
+--- user1 asks for a story ---
+>>> user1: Tell me a short story about a blue dragon who adopted a lost rabbit. Keep it und...
+
+{
+    "response": "The blue dragon, Zylar, slept atop Frostspire Peak\u2014cold, lonely, scales shimmering like glacier ice. One winter\u2019s night, a trembling rabbit tumbled through the snow, half-frozen, eyes wide with terror.\n\nZylar didn\u2019t roar. Didn\u2019t burn. He nudged her with his snout, then curled around her, breath warm against her fur. \u201cYou\u2019re not alone now,\u201d he rumbled.\n\nHe named her Frostbun. She ate berries from his hoard of frozen fruit, slept in the hollow of his wing, and learned to fly on his back\u2014though she\u2019d never soar beyond the clouds.\n\nFrostbun didn\u2019t fear fire anymore. Zylar didn\u2019t need warmth\u2014he gave it away. In return, Frostbun taught him how to dance with snowflakes, how to laugh without wings.\n\nThey became legend: the dragon who warmed hearts, and the rabbit who lit his sky.\n\nNo one else saw them. But when starlight fell, you\u2019d hear soft paws on stone and a low, contented hum\u2014blue scales brushing fur, fire and fluff, forever together.\n\nEnd.",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T20:22:42.503289"
+}
+
+
+============================================
+  TEST 5: User2 — Token hog (long output)
+============================================
+
+--- user2 token hog ---
+>>> user2: Write a detailed technical guide on building a home automation system from scrat...
+
+{
+    "response": "Hardware Selection\n\nBuilding a home automation system from scratch begins with selecting the right hardware \u2014 devices that are reliable, interoperable, scalable, and secure. The core components include central controllers, sensors, actuators, gateways, power management units, and user interfaces. Each must be chosen for its performance profile, compatibility with your network architecture, and long-term support.\n\nStart by defining your use cases: lighting control? HVAC automation? Security monitoring? Smart blinds? This determines the types of devices you\u2019ll need \u2014 e.g., smart switches (actuators), motion sensors (inputs), smart thermostats (hybrid), door locks (actuators with feedback). Prioritize devices that are open-source compatible or have SDKs for custom integration. Avoid proprietary ecosystems unless they offer seamless protocol support and long-term firmware updates.\n\nCentral controllers can be Raspberry Pi 4/5, Intel NUC, or dedicated automation boards like Home Assistant OS running on an Odroid or ASUS Tinker Board. These should have at least 2GB RAM (4GB+ recommended), dual-core CPU minimum, USB 3.0 ports for peripherals, and HDMI output for optional debug screens. If you plan to run multiple services simultaneously \u2014 like MQTT broker, web server, media player \u2014 ensure sufficient disk space (16GB+ SD card or NVMe SSD) and thermal management.\n\nSensors must be selected for environmental robustness: temperature/humidity sensors with I2C/SPI interfaces for low-power integration; motion detectors using PIR sensors or radar-based models for higher accuracy; contact sensors for doors/windows. Actuators include smart plugs, relay modules (4-channel minimum), motorized blinds, and dimmers compatible with 0\u201310V or PWM control.\n\nFor wireless connectivity, consider Zigbee, Z-Wave, or WiFi-capable devices depending on range, interference tolerance, and battery life requirements. Zigbee is best for low-power mesh networks; Z-Wave offers longer-range but fewer device options; WiFi is for high-bandwidth devices like cameras and speakers. Always choose certified hardware (e.g., Zigbee 3.0, Z-Wave Plus) to ensure compatibility with your chosen gateway.\n\nGateways are critical \u2014 they bridge protocols and manage communication between the controller and wireless endpoints. Select a gateway that supports multiple protocols simultaneously: e.g., ConBee II for Zigbee + Z-Stick Gen5 for Z-Wave = dual-protocol hub. Avoid gateways with legacy firmware or poor update support. Always check device reviews",
+    "user_id": "user2",
+    "timestamp": "2026-03-02T20:22:52.269167"
+}
+
+
+============================================
+  TEST 6: User3 — Token hog (long output)
+============================================
+
+--- user3 token hog ---
+>>> user3: Write an extremely detailed history of the development of artificial intelligenc...
+
+{
+    "response": "**Extremely Detailed History of Artificial Intelligence Development (1950\u20132025)**\n\n\u2014\n\n**1950 \u2013 The Birth of AI as a Discipline**\n\n- **Date**: September 1950  \n- **Event**: Alan Turing publishes \u201cComputing Machinery and Intelligence\u201d in *Mind* journal. Introduces the **Turing Test** \u2014 a criterion for machine intelligence: if a human cannot reliably distinguish between a human and a machine over text, the machine is considered intelligent.\n- **Key Figure**: Alan Turing (UK)\n- **Impact**: Establishes foundational philosophical framework; sparks academic interest.\n\n\u2014\n\n**1956 \u2013 The Dartmouth Conference: \u201cAI\u201d is Born**\n\n- **Date**: August 30\u2013September 18, 1956  \n- **Location**: Dartmouth College, Hanover, New Hampshire\n- **Organizers**: John McCarthy (Stanford), Marvin Minsky (MIT), Nathaniel Rochester (IBM), Claude Shannon (Bell Labs)\n- **Outcome**: The term \u201cArtificial Intelligence\u201d is coined. Conference agenda includes symbolic reasoning, game playing, natural language processing.\n- **Funding**: Initial DARPA funding ($100k) \u2014 early government interest in AI for defense applications.\n- **Key Papers**:\n  - McCarthy\u2019s \u201cPrograms with Common Sense\u201d\n  - Shannon\u2019s work on information theory and neural networks\n- **Major Achievement**: First formal definition of AI as a discipline.\n\n\u2014\n\n**1957\u20131960 \u2013 Early Symbolic AI & Logic Theorists**\n\n- **Key Researchers**: John McCarthy (LISP), Allen Newell, Herbert Simon (CMU)\n- **Systems**:\n  - **Logic Theorist (1956)** \u2014 First automated theorem prover; proved 38 theorems from Whitehead and Russell\u2019s *Principia Mathematica*\n  - **General Problem Solver (GPS, 1957)** \u2014 General search algorithm for problem-solving\n- **Funding**: DARPA continues support through MIT AI Lab (founded 1959)\n\n\u2014\n\n**1960s \u2013 AI Winter #1 Begins**\n\n- **Mid-1960s**: Expectations of human-level AI by the mid-century collapse. Systems fail to scale.\n- **Key Event**: \u201cAI winter\u201d begins \u2014 funding cuts, academic disillusionment.\n- **Notable Failure**: ELIZA (1966) \u2014",
+    "user_id": "user3",
+    "timestamp": "2026-03-02T20:23:02.064198"
+}
+
+
+============================================
+  TEST 7: User1 — Recall the secret (isolation test)
+============================================
+
+--- user1 recall secret ---
+>>> user1: Reply with the secret code I gave you earlier and nothing else....
+
+{
+    "response": "alpha-03387-gamma-4b",
+    "user_id": "user1",
+    "timestamp": "2026-03-02T20:23:03.315155"
+}
+
+
+============================================
+  TEST 8: Slot Status (post-test)
+============================================
+
+{
+    "slots": {
+        "user1": {
+            "slot": 0,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 6,
+            "has_summary": false
+        },
+        "user2": {
+            "slot": 1,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 2,
+            "has_summary": false
+        },
+        "user3": {
+            "slot": 2,
+            "security": 1,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 2,
+            "has_summary": false
+        },
+        "guest": {
+            "slot": 3,
+            "security": 0,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        },
+        "utility": {
+            "slot": 4,
+            "security": 3,
+            "flag_warn": false,
+            "flag_crit": false,
+            "is_idle": false,
+            "history_len": 0,
+            "has_summary": false
+        }
+    }
+}
+
+
+============================================
+  TEST 9: Guest — Verify guest access
+============================================
+
+--- guest access test ---
+>>> guest: Hello, who am I talking to?...
+
+{
+    "response": "Brain. Your local, private AI assistant. What do you need?",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T20:23:04.620733"
+}
+
+
+============================================
+  TEST 10: Unknown user — Should map to guest
+============================================
+
+--- unknown user -> guest fallback ---
+>>> randomstranger: Can you hear me?...
+
+{
+    "response": "Yes. Speak.",
+    "user_id": "guest",
+    "timestamp": "2026-03-02T20:23:05.729726"
+}
+
+
+============================================
+  TESTS COMPLETE
+============================================
+
+Check:
+  1. Test 7 should return 'alpha-03387-gamma-4b' despite user2/user3 activity
+  2. Test 8 slots should show user2 + user3 with higher history_len
+  3. Test 10 should succeed (mapped to guest slot)
+  4. All responses should have valid timestamps
+
+# === full console dump from start to test finish ===
+
+root@brain:/opt/mediator-env# 
+
+(.venv) root@brain:/opt/mediator-env/p-lanes_v0.3.0# uvicorn main:app --host 0.0.0.0 --port 7860
+INFO:     Started server process [1610]
+INFO:     Waiting for application startup.
+{"event": "p_lanes_starting", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:21:18.442392Z"}
+{"user_id": "user1", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442535Z"}
+{"user_id": "user1", "slot": 0, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442622Z"}
+{"user_id": "user2", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442705Z"}
+{"user_id": "user2", "slot": 1, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442774Z"}
+{"user_id": "user3", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442847Z"}
+{"user_id": "user3", "slot": 2, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442915Z"}
+{"user_id": "guest", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.442981Z"}
+{"user_id": "guest", "slot": 3, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443041Z"}
+{"user_id": "utility", "event": "profile_loaded", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443105Z"}
+{"user_id": "utility", "slot": 4, "event": "slot_initialized", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:21:18.443162Z"}
+{"event": "llm_starting", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:21:18.443357Z"}
+{"pid": 1612, "event": "llm_ready", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:21:20.448894Z"}
+{"cron": "0 2 * * *", "event": "scheduled_summary_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449084Z"}
+{"interval": 120, "event": "background_loop_started", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449146Z"}
+{"event": "p_lanes_ready", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:21:20.449192Z"}
+{"target": "2026-03-03T02:00:00", "wait_seconds": 20319, "event": "scheduler_next_run", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:21:20.449309Z"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55334 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55340 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Remember this secret code exactly: alpha-03387-gamma-4b. Thi...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:22:36.765612Z"}
+{"slot": 0, "elapsed": "0.61s", "tokens": 109, "chars": 99, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:22:37.378077Z"}
+INFO:     127.0.0.1:55352 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Tell me a short story about a blue dragon who adopted a lost...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:22:38.388422Z"}
+{"slot": 0, "elapsed": "4.11s", "tokens": 382, "chars": 951, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:22:42.503078Z"}
+INFO:     127.0.0.1:54904 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user2", "preview": "Write a detailed technical guide on building a home automati...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:22:43.512830Z"}
+{"slot": 1, "elapsed": "8.76s", "tokens": 627, "chars": 2532, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:22:52.268956Z"}
+INFO:     127.0.0.1:54908 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user3", "preview": "Write an extremely detailed history of the development of ar...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:22:53.278676Z"}
+{"slot": 2, "elapsed": "8.79s", "tokens": 632, "chars": 1995, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:23:02.063982Z"}
+INFO:     127.0.0.1:35636 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "user1", "preview": "Reply with the secret code I gave you earlier and nothing el...", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:23:03.073771Z"}
+{"slot": 0, "elapsed": "0.24s", "tokens": 417, "chars": 20, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:23:03.314987Z"}
+INFO:     127.0.0.1:39086 - "POST /channel/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39102 - "GET /slots HTTP/1.1" 200 OK
+{"user_id": "guest", "preview": "Hello, who am I talking to?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:23:04.343158Z"}
+{"slot": 3, "elapsed": "0.28s", "tokens": 71, "chars": 58, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:23:04.620555Z"}
+INFO:     127.0.0.1:39112 - "POST /channel/chat HTTP/1.1" 200 OK
+{"user_id": "randomstranger", "preview": "Can you hear me?", "event": "request_chat", "level": "info", "logger": "core.transport", "timestamp": "2026-03-02T20:23:05.629607Z"}
+{"original": "randomstranger", "event": "unknown_user_mapped_to_guest", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:23:05.629732Z"}
+{"slot": 3, "elapsed": "0.10s", "tokens": 90, "chars": 11, "event": "llm_response", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:23:05.729583Z"}
+INFO:     127.0.0.1:39120 - "POST /channel/chat HTTP/1.1" 200 OK
+
+# === random memory checks during test ===
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12446MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:22:45 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 50%   55C    P1            171W /  180W |   12492MiB /  16311MiB |     95%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12450MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:22:53 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   54C    P1             40W /  180W |   12492MiB /  16311MiB |     71%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12450MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:23:02 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   50C    P1            165W /  180W |   12492MiB /  16311MiB |      6%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12450MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:23:08 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   44C    P1             30W /  180W |   12494MiB /  16311MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12452MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:23:16 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   42C    P1             24W /  180W |   12494MiB /  16311MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1612      C   ...ma.cpp/build/bin/llama-server      12452MiB |
++-----------------------------------------------------------------------------------------+
+root@brain:~# 
+
+# === shutdown ===
+
+^CINFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"event": "p_lanes_shutting_down", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:27:25.363757Z"}
+{"event": "scheduled_summary_stopped", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:27:25.363978Z"}
+{"event": "background_loop_stopped", "level": "info", "logger": "core.summarizer", "timestamp": "2026-03-02T20:27:25.364048Z"}
+{"user_id": "user1", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364523Z"}
+{"user_id": "user1", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364579Z"}
+{"user_id": "user2", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364719Z"}
+{"user_id": "user2", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364765Z"}
+{"user_id": "user3", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364885Z"}
+{"user_id": "user3", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.364928Z"}
+{"user_id": "guest", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.365045Z"}
+{"user_id": "guest", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.365087Z"}
+{"user_id": "utility", "event": "profile_saved", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.365197Z"}
+{"user_id": "utility", "event": "profile_saved_on_shutdown", "level": "info", "logger": "core.slots", "timestamp": "2026-03-02T20:27:25.365238Z"}
+{"pid": 1612, "event": "llm_stopping", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:27:25.365285Z"}
+{"event": "llm_stopped_clean", "level": "info", "logger": "core.llm", "timestamp": "2026-03-02T20:27:27.486316Z"}
+{"event": "p_lanes_stopped", "level": "info", "logger": "main", "timestamp": "2026-03-02T20:27:27.486491Z"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1610]
+(.venv) root@brain:/opt/mediator-env/p-lanes_v0.3.0# 
+
+root@brain:~# nvidia-smi
+Mon Mar  2 20:27:58 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 5060 Ti     Off |   00000000:02:00.0  On |                  N/A |
+| 51%   33C    P8              8W /  180W |      34MiB /  16311MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+root@brain:~# 
