@@ -33,7 +33,7 @@ import yaml
 # ==================================================
 
 INSTALL_DIR     = Path(__file__).parent.resolve()
-CONFIG_PATH     = INSTALL_DIR / "/src/config.yaml"
+CONFIG_PATH     = INSTALL_DIR / "src" / "config.yaml"
 SERVICE_NAME    = "p-lanes"
 SERVICE_FILE    = Path(f"/etc/systemd/system/{SERVICE_NAME}.service")
 
