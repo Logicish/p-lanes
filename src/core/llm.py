@@ -503,17 +503,20 @@ def _build_payload(user: User, messages: list[dict], stream: bool) -> dict:
 
 
 def _update_flags(user: User, total_tokens: int, truncated: bool):
-    user.flag_crit = False
-    user.flag_warn = False
-
-    if truncated or total_tokens > (CONTEXT_PER_SLOT * THRESHOLD_CRIT):
-        user.flag_crit = True
-        log.warning("token_critical",
-                     user_id=user.user_id, slot=user.slot, tokens=total_tokens)
-    elif total_tokens > (CONTEXT_PER_SLOT * THRESHOLD_WARN):
+    if truncated or total_tokens > (CONTEXT_PER_SLOT * THRESHOLD_WARN):
         user.flag_warn = True
-        log.info("token_warn",
-                 user_id=user.user_id, slot=user.slot, tokens=total_tokens)
+        if total_tokens > (CONTEXT_PER_SLOT * THRESHOLD_CRIT):
+            user.flag_crit = True
+            log.warning("token_critical",
+                         user_id=user.user_id, slot=user.slot, tokens=total_tokens)
+        else:
+            log.info("token_warn",
+                     user_id=user.user_id, slot=user.slot, tokens=total_tokens)
+    else:
+        user.flag_warn = False
+        user.flag_crit = False
+        from core.summarizer import release_summarize_gate
+        release_summarize_gate(user.user_id)
 
 
 # ==================================================
