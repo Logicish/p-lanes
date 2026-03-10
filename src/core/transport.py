@@ -30,19 +30,47 @@
 # Imports
 # ==================================================
 import asyncio
+import json
 from datetime import datetime
 from typing import Callable
 
 import structlog
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+import providers
 from config import SecurityLevel
 from core import slots, llm, broadcast
 
 log = structlog.get_logger()
+
+
+# ==================================================
+# Voice / sentence helpers
+# ==================================================
+
+def _pop_sentence(buf: str) -> tuple[str | None, str]:
+    """Extract the first complete sentence from buf.
+    Splits on . ! ? followed by whitespace or end-of-string.
+    Returns (sentence, remainder) or (None, buf) if no complete
+    sentence is found yet."""
+    for i, ch in enumerate(buf):
+        if ch in ".!?" and (i + 1 >= len(buf) or buf[i + 1] in " \t\n"):
+            return buf[: i + 1].strip(), buf[i + 1 :].lstrip()
+    return None, buf
+
+
+async def _tts_send(ws: WebSocket, tts, text: str) -> None:
+    """Synthesize text and send as a binary WAV frame.
+    Falls back to a JSON text frame if TTS is unavailable or fails."""
+    if tts is not None and tts.is_ready:
+        audio = await tts.synthesize(text)
+        if audio:
+            await ws.send_bytes(audio)
+            return
+    await ws.send_json({"event": "text", "data": text})
 
 
 # ==================================================
@@ -169,7 +197,10 @@ def create_routes(
             # init event — self-describing stream metadata
             yield {
                 "event": "init",
-                "data": f'{{"user_id": "{user.user_id}", "conversation_id": "{conv_id or ""}"}}',
+                "data": json.dumps({
+                    "user_id": user.user_id,
+                    "conversation_id": conv_id or "",
+                }),
             }
             try:
                 async for chunk in handle_stream(
@@ -227,7 +258,10 @@ def create_routes(
             try:
                 yield {
                     "event": "init",
-                    "data": f'{{"user_id": "{user.user_id}", "listening": true}}',
+                    "data": json.dumps({
+                        "user_id": user.user_id,
+                        "listening": True,
+                    }),
                 }
                 while True:
                     event = await queue.get()
@@ -352,6 +386,115 @@ def create_routes(
                 "has_summary": bool(user.summary),
             }
         return {"slots": info}
+
+    # --------------------------------------------------
+    # WS /channel/voice — bidirectional audio I/O
+    # --------------------------------------------------
+    # Protocol:
+    #   client → server: binary frames (WAV audio, 16kHz mono)
+    #   server → client: binary frames (WAV audio, 24kHz mono)
+    #                    text frames  (JSON control events)
+    #
+    # Control events (server → client):
+    #   {"event": "ready",      "user_id": ..., "stt": bool, "tts": bool}
+    #   {"event": "transcript", "text": "..."}   — STT result
+    #   {"event": "silence"}                     — VAD found no speech
+    #   {"event": "text",       "data": "..."}   — TTS fallback (text only)
+    #   {"event": "done"}                        — response complete
+    #   {"event": "error",      "detail": "..."}
+    #
+    # Control events (client → server):
+    #   {"event": "ping"}  → {"event": "pong"}
+    # --------------------------------------------------
+
+    @app.websocket("/channel/voice")
+    async def voice_ws(
+        websocket: WebSocket,
+        user_id: str = Query(..., description="Authenticated user_id"),
+    ):
+        await websocket.accept()
+
+        uid = user_id.lower().strip()
+        user, error = _gate1(uid)
+        if error:
+            await websocket.send_json({"event": "error", "detail": "unauthorized"})
+            await websocket.close(code=4003)
+            return
+
+        stt = providers.get_stt()
+        tts = providers.get_tts()
+        stt_ready = stt is not None and stt.is_ready
+        tts_ready = tts is not None and tts.is_ready
+
+        await websocket.send_json({
+            "event":   "ready",
+            "user_id": user.user_id,
+            "stt":     stt_ready,
+            "tts":     tts_ready,
+        })
+        log.info("voice_ws_connected", user_id=user.user_id,
+                 stt=stt_ready, tts=tts_ready)
+
+        try:
+            while True:
+                msg = await websocket.receive()
+
+                # --- binary frame: audio from client ---
+                if "bytes" in msg and msg["bytes"]:
+                    audio = msg["bytes"]
+
+                    if stt is None or not stt.is_ready:
+                        await websocket.send_json({
+                            "event":  "error",
+                            "detail": "stt_unavailable",
+                        })
+                        continue
+
+                    text = await stt.transcribe(audio)
+
+                    if not text:
+                        await websocket.send_json({"event": "silence"})
+                        continue
+
+                    # echo transcript so client can display it
+                    await websocket.send_json({"event": "transcript", "text": text})
+                    log.info("voice_ws_transcript", user_id=user.user_id,
+                             preview=text[:60])
+
+                    # stream LLM with sentence-buffered TTS
+                    buf = ""
+                    async for chunk in handle_stream(user.user_id, text):
+                        buf += chunk
+                        while True:
+                            sentence, buf = _pop_sentence(buf)
+                            if sentence is None:
+                                break
+                            await _tts_send(websocket, tts, sentence)
+
+                    # flush trailing text (no terminal punctuation)
+                    if buf.strip():
+                        await _tts_send(websocket, tts, buf.strip())
+
+                    await websocket.send_json({"event": "done"})
+
+                # --- text frame: control message from client ---
+                elif "text" in msg and msg["text"]:
+                    try:
+                        ctrl = json.loads(msg["text"])
+                    except Exception:
+                        continue
+                    if ctrl.get("event") == "ping":
+                        await websocket.send_json({"event": "pong"})
+
+        except WebSocketDisconnect:
+            log.info("voice_ws_disconnected", user_id=user.user_id)
+        except Exception as e:
+            log.error("voice_ws_error", user_id=user.user_id, error=str(e))
+            try:
+                await websocket.send_json({"event": "error", "detail": str(e)})
+                await websocket.close(code=1011)
+            except Exception:
+                pass
 
     # --------------------------------------------------
     # Catch-all 404

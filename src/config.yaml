@@ -47,7 +47,7 @@ llm:
 # ==================================================
 slots:
   count: 5                # 4 persistent users + 1 utility
-  ctx_total: 51200        # total context across all slots (set to 61440 for production)
+  ctx_total: 40960        # total context across all slots (set to 61440 for production)
 
 # ==================================================
 # Summarization
@@ -95,30 +95,6 @@ sampling:
   max_tokens: 512
 
 # ==================================================
-# Security Levels
-# ==================================================
-# 0=GUEST, 1=USER, 2=POWER, 3=TRUSTED, 4=ADMIN
-#
-# Users
-# ==================================================
-users:
-  user1:
-    slot: 0
-    security: 3           # TRUSTED
-  user2:
-    slot: 1
-    security: 1           # USER
-  user3:
-    slot: 2
-    security: 1           # USER
-  guest:
-    slot: 3
-    security: 0           # GUEST
-  utility:
-    slot: 4
-    security: 4           # ADMIN
-
-# ==================================================
 # Guest Account
 # ==================================================
 guest:
@@ -141,6 +117,21 @@ utility:
 # ==================================================
 # module_name: minimum_security_level
 module_permissions: {}
+
+# ==================================================
+# Providers (STT / TTS)
+# ==================================================
+providers:
+  stt:
+    enabled: true
+    url: "http://192.168.1.13:8100"
+    timeout: 30
+    retries: 1
+  tts:
+    enabled: true
+    url: "http://192.168.1.14:8200"
+    timeout: 30
+    retries: 0
 
 # ==================================================
 # Logging

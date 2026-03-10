@@ -73,6 +73,12 @@ class User:
     frequency_penalty: float = DEFAULT_FREQUENCY_PENALTY
     max_tokens:        int   = DEFAULT_MAX_TOKENS
 
+    # last response metadata (set by llm.call_stream for
+    # post-processor access — not persisted to profile)
+    last_total_tokens: int   = 0
+    last_elapsed:      float = 0.0
+    last_truncated:    bool  = False
+
     # --- paths ---
 
     @property
@@ -156,7 +162,9 @@ def _load_profile(user_id: str) -> User:
             persona        = data.get("persona", persona)
             voice_id       = data.get("voice_id", voice_id)
             rag_scope      = data.get("rag_scope", rag_scope)
-            security_level = data.get("security_level", security_level)
+            # security_level intentionally NOT loaded from profile.
+            # config.yaml is the sole authority — prevents escalation
+            # via user-writable profile.json files.
             log.info("profile_loaded", user_id=user_id)
         except Exception as e:
             log.error("profile_load_error", user_id=user_id, error=str(e))

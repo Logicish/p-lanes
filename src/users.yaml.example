@@ -1,0 +1,34 @@
+# users.yaml.example
+#
+# Copy this to users.yaml and fill in your real user names.
+# users.yaml is gitignored — do not commit it.
+#
+# Run setup.py to generate users.yaml interactively,
+# or copy this file and edit manually.
+#
+# Security levels:
+#   0 = GUEST   — read-only, no persistence
+#   1 = USER    — standard access
+#   2 = POWER   — extended limits
+#   3 = TRUSTED — near-admin, trusted household member
+#   4 = ADMIN   — full access, utility slot
+#
+# Slot assignments must be 0-based and match slots.count in config.yaml.
+# Last slot is reserved for utility (if utility.enabled: true).
+
+users:
+  yourname:
+    slot: 0
+    security: 4           # ADMIN
+  person2:
+    slot: 1
+    security: 3           # TRUSTED
+  person3:
+    slot: 2
+    security: 1           # USER
+  guest:
+    slot: 3
+    security: 0           # GUEST
+  utility:
+    slot: 4
+    security: 4           # ADMIN (reserved for background tasks)

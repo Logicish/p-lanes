@@ -65,25 +65,19 @@ from config import (
     GUEST_ENABLED,
 )
 from core.slots import User, save_profile, get_all_users
+from core.gates import is_summarizing, set_summarizing, release_summarize_gate
 
 log = structlog.get_logger()
 
 # ==================================================
 # Active Summarization Tracking
 # ==================================================
-# Prevents duplicate async summarizations on the same
-# user. In-place mode uses slot_lock instead.
+# Gate state moved to core/gates.py to break circular
+# dependency with llm.py. Functions used here:
+#   is_summarizing()       — check if user has active run
+#   set_summarizing()      — mark user as summarizing
+#   release_summarize_gate() — clear gate (called by llm)
 # ==================================================
-
-_summarizing_users: set[str] = set()
-def release_summarize_gate(user_id: str):
-    """Called by llm._update_flags() when token count drops
-    below warn threshold — proves the slot went cold and
-    rebuilt with trimmed history. Safe to allow future
-    summarization triggers."""
-    if user_id in _summarizing_users:
-        _summarizing_users.discard(user_id)
-        log.info("summarize_gate_released", user_id=user_id)
 
 # ==================================================
 # Token Estimation
@@ -235,7 +229,7 @@ async def summarize_if_needed(user: User):
 
     if UTILITY_ENABLED:
         # async mode -- no lock, snapshot/merge
-        if user.user_id in _summarizing_users:
+        if is_summarizing(user.user_id):
             log.info("async_summarize_already_running", user_id=user.user_id)
             return
         try:
@@ -383,47 +377,61 @@ async def _summarize_async(user: User):
         log.info("not_enough_history", user_id=user.user_id)
         return
 
-    if user.user_id in _summarizing_users:
+    if is_summarizing(user.user_id):
         return
-    _summarizing_users.add(user.user_id)
+    set_summarizing(user.user_id)
 
-    # snapshot: remember where the history was when we started
-    snapshot_index = len(user.conversation_history)
-    history_snapshot = list(user.conversation_history[:snapshot_index])
+    try:
+        # snapshot: remember where the history was when we started
+        snapshot_index = len(user.conversation_history)
+        history_snapshot = list(user.conversation_history[:snapshot_index])
 
-    # split snapshot: messages to summarize vs messages to keep
-    recent = _select_recent_messages(history_snapshot, KEEP_RECENT_TOKENS)
-    keep_count = len(recent)
-    to_summarize = history_snapshot[:-keep_count] if keep_count else history_snapshot
+        # split snapshot: messages to summarize vs messages to keep
+        recent = _select_recent_messages(history_snapshot, KEEP_RECENT_TOKENS)
+        keep_count = len(recent)
+        to_summarize = history_snapshot[:-keep_count] if keep_count else history_snapshot
 
-    if not to_summarize:
-        log.info("nothing_to_summarize", user_id=user.user_id,
-                 recent_count=keep_count)
-        return
+        if not to_summarize:
+            log.info("nothing_to_summarize", user_id=user.user_id,
+                     recent_count=keep_count)
+            release_summarize_gate(user.user_id)
+            return
 
-    # build prompt and call LLM on utility slot
-    new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=None)
+        # build prompt and call LLM on utility slot
+        new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=None)
 
-    if new_summary is None:
-        # LLM call failed -- emergency trim using snapshot data
-        _emergency_trim(user, recent)
-        return
+        if new_summary is None:
+            # LLM call failed -- emergency trim using snapshot data
+            _emergency_trim(user, recent)
+            # gate leak fix: release on failure so user can
+            # be summarized again on next trigger
+            release_summarize_gate(user.user_id)
+            return
 
-    # merge: get any new messages that arrived during summarization
-    new_messages = user.conversation_history[snapshot_index:]
+        # merge: get any new messages that arrived during summarization
+        new_messages = user.conversation_history[snapshot_index:]
 
-    # apply: new summary + recent from snapshot + anything new
-    user.summary = new_summary
-    user.conversation_history = recent + new_messages
-    user.flag_warn = False
-    user.flag_crit = False
+        # apply: new summary + recent from snapshot + anything new
+        user.summary = new_summary
+        user.conversation_history = recent + new_messages
+        user.flag_warn = False
+        user.flag_crit = False
 
-    save_profile(user)
-    log.info("summary_updated_async",
-             user_id=user.user_id,
-             kept_recent=len(recent),
-             new_during_summarize=len(new_messages),
-             summary_tokens=_estimate_tokens(new_summary))
+        save_profile(user)
+        log.info("summary_updated_async",
+                 user_id=user.user_id,
+                 kept_recent=len(recent),
+                 new_during_summarize=len(new_messages),
+                 summary_tokens=_estimate_tokens(new_summary))
+
+        # gate stays shut — released by llm._update_flags()
+        # when the slot proves clean on next LLM response
+
+    except Exception:
+        # gate leak fix: release on unexpected failure so
+        # user isn't permanently locked out of summarization
+        release_summarize_gate(user.user_id)
+        raise
 
 
 # ==================================================

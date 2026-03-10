@@ -36,6 +36,7 @@ import aiohttp
 import structlog
 from fastapi import FastAPI
 
+import config
 from config import LLM_TIMEOUT
 from core.log import setup_logging
 from core import llm, slots, summarizer, broadcast
@@ -43,6 +44,9 @@ from core.llm import LLMContextOverflow
 from core.pipeline import PipelineContext
 from core.transport import create_routes
 from service import service as svc
+import providers
+from providers.whisper import WhisperProvider
+from providers.kokoro import KokoroProvider
 
 log = structlog.get_logger()
 
@@ -61,6 +65,12 @@ async def lifespan(app: FastAPI):
     # discover and register modules
     import modules  # noqa: F401
 
+    # register providers (conditional on config)
+    if config.STT_ENABLED:
+        providers.register_provider(WhisperProvider())
+    if config.TTS_ENABLED:
+        providers.register_provider(KokoroProvider())
+
     # start LLM with a shared session for the entire app lifetime
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=LLM_TIMEOUT)
@@ -68,6 +78,9 @@ async def lifespan(app: FastAPI):
         ready = await llm.start(session)
         if not ready:
             log.error("llm_start_failed")
+
+        # start providers (non-fatal — degraded mode if unavailable)
+        await providers.start_all()
 
         # start background tasks (scheduler + idle/health loop)
         await summarizer.start_scheduler()
@@ -80,6 +93,9 @@ async def lifespan(app: FastAPI):
         # stop background tasks
         await summarizer.stop_scheduler()
         await summarizer.stop_background_loop()
+
+        # stop providers
+        await providers.stop_all()
 
     slots.shutdown_all()
     await llm.stop()
@@ -228,9 +244,12 @@ async def handle_stream(
         yield ctx.response_text
 
     # --- responder + finalizer (silent, side effects only) ---
-    # populate response_text so post-processor modules have
-    # access to the complete response (e.g. for TTS, logging)
-    ctx.response_text = "".join(accumulated)
+    # populate response_text and metadata so post-processor
+    # modules have access to the complete response (e.g. TTS, logging)
+    ctx.response_text  = "".join(accumulated)
+    ctx.total_tokens   = user.last_total_tokens
+    ctx.elapsed        = user.last_elapsed
+    ctx.truncated      = user.last_truncated
     ctx = await svc.run_post_processor(ctx)
 
     # broadcast done to any listeners

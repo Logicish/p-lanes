@@ -1,6 +1,6 @@
 # p-lanes (alpha stage)
 
-A modular microkernel/wrapper for llama.cpp focused on: home-lab scaled hardware, low-latency, and KV slot pinned users.
+A modular "microkernel"/wrapper for llama.cpp focused on: home-lab scaled hardware, low-latency, and KV slot pinned users.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/release/python-3120/)
@@ -37,7 +37,7 @@ By using llama.cpp as a lightweight foundation, p-lanes starts with significantl
 - **Optional Utility Lane:** Background lanes for tasks like RAG retrieval or prompt fixing, stateless. This prevents "dirtying" the primary user history with system-level data. Gracefully falls back to the user slot when unavailable.
 - **Automatic Summarization:** Logic to compress older conversation context into summaries to prevent VRAM overflow while preserving long-term memory. Customizable and optional scheduled summarizations.
 - **Multi-Channel I/O:** Simultaneous voice, chat, and future vision interfaces — each with its own input/output providers — all feeding into the same pipeline and the same user slot. Speak in the kitchen and type on your phone; the LLM sees one continuous conversation.
-- **Live Transcript Stream:** Optional SSE (Server-Sent Events) endpoint that mirrors both sides of a conversation in real time. Connect a dashboard card to watch voice conversations appear as text, with chat and voice turns interleaved in a unified timeline.
+- **Live Transcript Stream** *(planned):* Optional SSE (Server-Sent Events) endpoint that mirrors both sides of a conversation in real time. Connect a dashboard card to watch voice conversations appear as text, with chat and voice turns interleaved in a unified timeline.
 - **Three-Gate Security Model:** Layered access control that never trusts the LLM as a decision maker. Gate 1 verifies user identity at the transporter. Gate 2 enforces stage-level access floors from core config. Gate 3 checks per-module permissions declared by each addon. Each gate can only raise the bar, never lower it.
 - **Drop-In Architecture:** Modules and providers are self-contained folders with their own manifests and config files. Drop a folder in, restart, and the system auto-discovers it. Remove the folder to uninstall. Core config is never touched by addons.
 - **Full Customization:** Control over model weights, summarization triggers, and KV window sizes.
@@ -142,7 +142,7 @@ The voice control example never touches the LLM. The classifier identifies the i
 
 ### Theoretical Minimums:
 - **Hardware:** A GPU and a working computer. (llama.cpp supports CPU-only inference, but p-lanes is designed around GPU-pinned slots and is not optimized for CPU-only deployments.)
-- **Software:** Python 3.12+, llama.cpp server, a supported STT/TTS provider for voice channels (optional), Home Assistant (currently used for automation logic), and Linux OS (may become Windows compatible later).
+- **Software:** Python 3.12+, llama.cpp server, a supported STT/TTS provider for voice channels (optional), and Linux OS (may become Windows compatible later). Home Assistant is not a core dependency — p-lanes ships an optional HAOS custom integration (`brain_conversation`) for voice and chat UI.
 
 ### Tested Build (Development Environment):
 - **CPU:** Intel Core Ultra 7
@@ -155,13 +155,14 @@ The voice control example never touches the LLM. The classifier identifies the i
 
 ## 🗺️ Roadmap
 
-p-lanes is currently in active development. The transition from a monolithic prototype to a modular microkernel is nearly complete.
+p-lanes is currently in active development. v0.3.0 completed the architectural transition to a modular "microkernel" structure. v0.4.0 focused on core hardening, voice pipeline, and external integration.
 
 ### Project History
 
 - **v0.1.0:** Monolithic structure. Proven concept with full text-chat functionality. (Modular nightmare.)
 - **v0.2.0:** First major redesign. Ported to Python package format and separated core logic from modules.
-- **v0.3.0:** (Current Phase) Architectural split into drop-in components. Modules and providers are now self-contained with auto-discovery, self-declared manifests, and isolated config files. Core config is no longer touched by addons.
+- **v0.3.0:** Architectural split into drop-in components. Modules and providers self-contained with auto-discovery, self-declared manifests, and isolated config files. Core config no longer touched by addons.
+- **v0.4.0:** (Current) Core hardening — utility lane full implementation, summarization double-fire and gate-leak fixes, security escalation fix, circular import refactor (`core/gates.py`), streaming post-processor fix, unsafe SSE JSON fix. Voice pipeline — Whisper STT and Kokoro TTS providers, WebSocket `/channel/voice` endpoint. HAOS custom integration — conversation, STT, and TTS entities with user name routing. `users.yaml` split to keep real names out of git.
 
 ### Development Status
 
@@ -170,9 +171,11 @@ p-lanes is currently in active development. The transition from a monolithic pro
 - [x] Core configuration implementation (global slots, user windows, system permissions, stage security floors).
 - [x] Basic channel setup — text/API provider, stability testing.
 - [x] Public alpha release: upload active builds to GitHub.
-- [ ] Voice channel implementation (STT + TTS provider integration).
-- [ ] Multi-channel support — simultaneous voice + chat on the same user slot.
-- [ ] Basic classifier and enricher modules (Home Assistant integration).
+- [x] Voice channel implementation (STT + TTS providers, WebSocket `/channel/voice`, HAOS integration).
+- [ ] Multi-channel support — simultaneous voice + chat on the same user slot (implemented, not yet stress-tested under concurrent load).
+- [ ] Pipeline stage implementation — Classifier, Enricher, Processor, and Finalizer stages (currently the pipeline is a flat `handle_message`/`handle_stream`; staged dispatch is the design target).
+- [ ] Gate 2 (stage-level access floors) and Gate 3 (per-module permissions) enforcement — Gate 1 identity check is live; Gates 2 and 3 are config skeleton only.
+- [ ] Basic classifier and enricher modules (Home Assistant device control integration).
 - [ ] Transcript SSE stream for live conversation mirroring.
 - [ ] Vision channel — multimodal input provider (text + images via Qwen3-VL).
 - [ ] Universal installer script and `installer.py` for automated setup.

@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 *.log
+
+# Users file — contains real names, never commit
+src/users.yaml

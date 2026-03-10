@@ -24,6 +24,7 @@ import yaml
 # Load Config
 # ==================================================
 _CONFIG_PATH = Path(__file__).parent / "config.yaml"
+_USERS_PATH  = Path(__file__).parent / "users.yaml"
 
 def _load_config() -> dict:
     if not _CONFIG_PATH.exists():
@@ -34,7 +35,19 @@ def _load_config() -> dict:
     with open(_CONFIG_PATH, "r") as f:
         return yaml.safe_load(f)
 
-_cfg = _load_config()
+def _load_users() -> dict:
+    if not _USERS_PATH.exists():
+        raise FileNotFoundError(
+            f"Users file not found: {_USERS_PATH}\n"
+            "Run setup.py to generate one, or create it manually.\n"
+            "See users.yaml.example for format."
+        )
+    with open(_USERS_PATH, "r") as f:
+        data = yaml.safe_load(f) or {}
+    return data.get("users", {})
+
+_cfg        = _load_config()
+_users_cfg  = _load_users()
 
 # ==================================================
 # Identity
@@ -135,10 +148,8 @@ class SecurityLevel:
     ADMIN   = 4
 
 # ==================================================
-# Users — build slot map and security from yaml
+# Users — build slot map and security from users.yaml
 # ==================================================
-_users_cfg = _cfg.get("users", {})
-
 SLOT_MAP: dict[str, int] = {}
 USER_SECURITY: dict[str, int] = {}
 
@@ -180,6 +191,23 @@ MODULE_PERMISSIONS: dict[str, int] = _cfg.get("module_permissions", {}) or {}
 # ==================================================
 LOG_LEVEL  = _cfg.get("logging", {}).get("level", "INFO")
 LOG_FORMAT = _cfg.get("logging", {}).get("format", "json")
+
+# ==================================================
+# Providers (STT / TTS)
+# ==================================================
+_providers_cfg = _cfg.get("providers", {})
+
+_stt_cfg = _providers_cfg.get("stt", {})
+STT_ENABLED  = _stt_cfg.get("enabled", False)
+STT_URL      = _stt_cfg.get("url", "http://localhost:8100")
+STT_TIMEOUT  = _stt_cfg.get("timeout", 30)
+STT_RETRIES  = _stt_cfg.get("retries", 1)
+
+_tts_cfg = _providers_cfg.get("tts", {})
+TTS_ENABLED  = _tts_cfg.get("enabled", False)
+TTS_URL      = _tts_cfg.get("url", "http://localhost:8200")
+TTS_TIMEOUT  = _tts_cfg.get("timeout", 30)
+TTS_RETRIES  = _tts_cfg.get("retries", 0)
 
 # ==================================================
 # LLM Launch Command

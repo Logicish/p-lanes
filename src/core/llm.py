@@ -50,6 +50,7 @@ from config import (
     SLOT_MAP,
     UTILITY_ENABLED,
 )
+from core.gates import release_summarize_gate
 from core.slots import User
 
 log = structlog.get_logger()
@@ -374,6 +375,11 @@ async def call_stream(user: User, message: str) -> AsyncIterator[str]:
     _update_flags(user, total_tokens, truncated)
     user.add_message("assistant", complete_text)
 
+    # store response metadata for streaming post-processor
+    user.last_total_tokens = total_tokens
+    user.last_elapsed = elapsed
+    user.last_truncated = truncated
+
     log.info("llm_stream_complete",
              slot=user.slot, elapsed=f"{elapsed:.2f}s",
              tokens=total_tokens, chars=len(complete_text))
@@ -515,7 +521,6 @@ def _update_flags(user: User, total_tokens: int, truncated: bool):
     else:
         user.flag_warn = False
         user.flag_crit = False
-        from core.summarizer import release_summarize_gate
         release_summarize_gate(user.user_id)
 
 
