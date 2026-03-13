@@ -1,0 +1,8 @@
+# providers/kokoro/config.yaml
+# Kokoro TTS provider configuration.
+# Isolated from core config — edit here without touching config.yaml.
+
+enabled: true
+url: "http://192.168.1.14:8200"
+timeout: 30      # seconds — http response timeout per request
+retries: 0       # no retry — TTS failure is non-fatal; caller falls back to text

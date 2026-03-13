@@ -47,7 +47,7 @@ llm:
 # ==================================================
 slots:
   count: 5                # 4 persistent users + 1 utility
-  ctx_total: 40960        # total context across all slots (set to 61440 for production)
+  ctx_total: 40960        # 8,192 tokens per slot (5 slots × 8,192)
 
 # ==================================================
 # Summarization
@@ -56,12 +56,12 @@ slots:
 # remaining context after subtracting the static
 # system header budget.
 #
-# Example at 12,288 per slot:
-#   remaining       = 12,288 - 128 = 12,160
-#   summary cap     = 12,160 * 0.10 = 1,216 tokens
-#   recent budget   = 12,160 * 0.15 = 1,824 tokens
-#   post-summarize  = ~30% of slot
-#   headroom to crit = ~50% of slot (~27-33 exchanges)
+# At 8,192 tokens per slot:
+#   remaining       = 8,192 - 128 = 8,064
+#   summary cap     = 8,064 * 0.10 = 806 tokens
+#   recent budget   = 8,064 * 0.15 = 1,210 tokens
+#   post-summarize  = ~25% of slot
+#   headroom to crit = ~55% of slot (~18-25 exchanges)
 #
 summarization:
   threshold_warn: 0.70    # flag_warn — background summarize when idle
@@ -119,19 +119,12 @@ utility:
 module_permissions: {}
 
 # ==================================================
-# Providers (STT / TTS)
+# Providers
 # ==================================================
-providers:
-  stt:
-    enabled: true
-    url: "http://192.168.1.13:8100"
-    timeout: 30
-    retries: 1
-  tts:
-    enabled: true
-    url: "http://192.168.1.14:8200"
-    timeout: 30
-    retries: 0
+# Provider config is isolated — each provider manages
+# its own config.yaml under providers/<name>/config.yaml.
+# Nothing provider-specific lives here.
+# ==================================================
 
 # ==================================================
 # Logging

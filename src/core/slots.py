@@ -226,7 +226,19 @@ def resolve_user(user_id: str) -> str | None:
     return None
 
 
-def get_user(user_id: str) -> User | None:
+def get_user(user_id: str | None) -> User | None:
+    """Resolve user_id to a User object.
+    None means the caller could not identify the user (e.g. voice print
+    failed or returned low confidence) — falls back to guest if enabled,
+    otherwise returns None. Policy decision lives here, not in providers.
+    """
+    if user_id is None:
+        if GUEST_ENABLED and "guest" in SLOT_MAP:
+            log.info("null_user_mapped_to_guest")
+            if "guest" not in _active_users:
+                _active_users["guest"] = _load_profile("guest")
+            return _active_users["guest"]
+        return None
     resolved = resolve_user(user_id)
     if resolved is None:
         return None

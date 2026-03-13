@@ -2,15 +2,15 @@
 #
 # Author:  Logicish
 # Company: Logic-Ish Designs
-# Date:    3/6/2026
+# Date:    3/13/2026
 #
 # ==================================================
-# Abstract base classes for transport-layer providers.
+# Abstract base classes and result types for providers.
 # Providers run at the transport layer, NOT as pipeline
 # modules. STT runs before the pipeline (audio → text),
 # TTS runs after (text → audio).
 #
-# Implementations: providers/whisper.py, providers/kokoro.py
+# Implementations: providers/whisper/, providers/kokoro/
 #
 # Knows about: nothing — this is a leaf dependency.
 # ==================================================
@@ -19,7 +19,24 @@
 # Imports
 # ==================================================
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import AsyncIterator
+
+
+# ==================================================
+# STT Result
+# ==================================================
+
+@dataclass
+class TranscribeResult:
+    """Structured result from an STT provider.
+    Carries the transcribed text plus metadata for
+    envelope population (language, confidence, VAD).
+    """
+    text:           str
+    vad:            bool        = True   # False = no speech detected, text will be ""
+    language:       str | None  = None   # detected language code, e.g. "en"
+    stt_confidence: float | None = None  # language probability 0.0-1.0
 
 
 # ==================================================
@@ -60,7 +77,7 @@ class Provider(ABC):
 
 class STTProvider(Provider):
     """Speech-to-text provider interface.
-    Receives audio bytes, returns transcribed text.
+    Receives audio bytes, returns a TranscribeResult.
     Called by transport before the pipeline."""
 
     @abstractmethod
@@ -68,15 +85,16 @@ class STTProvider(Provider):
         self,
         audio: bytes,
         sample_rate: int = 16000,
-    ) -> str:
+    ) -> TranscribeResult:
         """Transcribe audio to text.
 
         Args:
-            audio:       Raw audio bytes (PCM s16le expected)
+            audio:       Raw audio bytes (PCM s16le or WAV)
             sample_rate: Sample rate of the input audio
 
         Returns:
-            Transcribed text string.
+            TranscribeResult with text, VAD flag, language,
+            and STT confidence. text is "" when vad is False.
         """
         ...
 

@@ -2,13 +2,16 @@
 #
 # Author:  Logicish
 # Company: Logic-Ish Designs
-# Date:    3/6/2026
+# Date:    3/13/2026
 #
 # ==================================================
-# Provider registry and lifecycle management.
-# Transport-layer providers (STT, TTS) register here
-# at startup. Transport.py queries the registry to
-# discover available capabilities.
+# Provider registry, lifecycle management, and
+# autodiscovery. Providers are fully isolated — each
+# lives in its own subdirectory with its own config.
+#
+# autodiscover() scans providers/ for subpackages that
+# expose a register() hook. Core never imports a
+# specific provider directly.
 #
 # Knows about: providers/base (type hints only).
 # ==================================================
@@ -18,6 +21,9 @@
 # ==================================================
 from __future__ import annotations
 
+import importlib
+import pkgutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -66,6 +72,36 @@ def get_tts() -> "TTSProvider | None":
 
 def get_all() -> dict[str, "Provider"]:
     return _providers
+
+
+# ==================================================
+# Autodiscovery
+# ==================================================
+
+def autodiscover() -> None:
+    """Scan providers/ subdirectories for register() hooks.
+    Each provider subpackage that exposes register() is
+    imported and its hook is called. Providers that are
+    disabled in their own config.yaml are silently skipped.
+    A broken provider logs an error but does not crash startup.
+    """
+    providers_path = Path(__file__).parent
+
+    for _importer, pkg_name, ispkg in pkgutil.iter_modules([str(providers_path)]):
+        if not ispkg:
+            continue   # skip flat modules (base.py, etc.)
+
+        full_name = f"providers.{pkg_name}"
+        try:
+            mod = importlib.import_module(full_name)
+            if hasattr(mod, "register"):
+                mod.register()
+                log.info("provider_discovered", provider=pkg_name)
+            else:
+                log.debug("provider_no_register_hook", provider=pkg_name)
+        except Exception as e:
+            log.error("provider_discovery_failed",
+                       provider=pkg_name, error=str(e))
 
 
 # ==================================================

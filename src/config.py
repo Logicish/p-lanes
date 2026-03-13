@@ -193,21 +193,12 @@ LOG_LEVEL  = _cfg.get("logging", {}).get("level", "INFO")
 LOG_FORMAT = _cfg.get("logging", {}).get("format", "json")
 
 # ==================================================
-# Providers (STT / TTS)
+# Providers
 # ==================================================
-_providers_cfg = _cfg.get("providers", {})
-
-_stt_cfg = _providers_cfg.get("stt", {})
-STT_ENABLED  = _stt_cfg.get("enabled", False)
-STT_URL      = _stt_cfg.get("url", "http://localhost:8100")
-STT_TIMEOUT  = _stt_cfg.get("timeout", 30)
-STT_RETRIES  = _stt_cfg.get("retries", 1)
-
-_tts_cfg = _providers_cfg.get("tts", {})
-TTS_ENABLED  = _tts_cfg.get("enabled", False)
-TTS_URL      = _tts_cfg.get("url", "http://localhost:8200")
-TTS_TIMEOUT  = _tts_cfg.get("timeout", 30)
-TTS_RETRIES  = _tts_cfg.get("retries", 0)
+# Provider config is isolated — each provider reads
+# its own config.yaml from its subdirectory under
+# providers/. Nothing provider-specific lives here.
+# ==================================================
 
 # ==================================================
 # LLM Launch Command

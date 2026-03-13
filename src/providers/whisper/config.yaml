@@ -1,0 +1,8 @@
+# providers/whisper/config.yaml
+# Whisper STT provider configuration.
+# Isolated from core config — edit here without touching config.yaml.
+
+enabled: true
+url: "http://192.168.1.13:8100"
+timeout: 30      # seconds — http response timeout per request
+retries: 1       # retry attempts on failure (input audio is lost on failure)

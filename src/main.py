@@ -2,17 +2,21 @@
 #
 # Author:  Logicish
 # Company: Logic-Ish Designs
-# Date:    2/26/2026
+# Date:    3/13/2026
 #
 # ==================================================
 # Microkernel entry point.
 # Knows about: slots, llm, service, transport,
 #              summarizer, events, log, pipeline,
-#              broadcast.
+#              broadcast, providers, envelope.
 # Wires them at startup. Orchestrates the pipeline:
 #   Channel -> Transporter -> Classifier -> Enricher
 #   -> Processor -> Responder -> Finalizer -> Channel
 # Must never contain business logic.
+#
+# Providers are fully isolated — autodiscover() scans
+# providers/ subdirectories at startup. Core never
+# imports a specific provider directly.
 #
 # Streaming post-processor:
 #   After the LLM stream completes, accumulated text
@@ -24,6 +28,12 @@
 # Run with:
 #   uvicorn main:app --host 0.0.0.0 --port 7860
 # ==================================================
+
+# ==================================================
+# Version
+# ==================================================
+
+VERSION = "0.5.0"
 
 # ==================================================
 # Imports
@@ -41,12 +51,11 @@ from config import LLM_TIMEOUT
 from core.log import setup_logging
 from core import llm, slots, summarizer, broadcast
 from core.llm import LLMContextOverflow
+from core.envelope import MessageEnvelope
 from core.pipeline import PipelineContext
 from core.transport import create_routes
 from service import service as svc
 import providers
-from providers.whisper import WhisperProvider
-from providers.kokoro import KokoroProvider
 
 log = structlog.get_logger()
 
@@ -57,7 +66,7 @@ log = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    log.info("p_lanes_starting")
+    log.info("p_lanes_starting", version=VERSION)
 
     # initialize all user slots
     slots.init_all_users()
@@ -65,11 +74,9 @@ async def lifespan(app: FastAPI):
     # discover and register modules
     import modules  # noqa: F401
 
-    # register providers (conditional on config)
-    if config.STT_ENABLED:
-        providers.register_provider(WhisperProvider())
-    if config.TTS_ENABLED:
-        providers.register_provider(KokoroProvider())
+    # discover and register providers
+    # each provider subpackage reads its own config and registers itself
+    providers.autodiscover()
 
     # start LLM with a shared session for the entire app lifetime
     async with aiohttp.ClientSession(
@@ -86,7 +93,7 @@ async def lifespan(app: FastAPI):
         await summarizer.start_scheduler()
         await summarizer.start_background_loop()
 
-        log.info("p_lanes_ready")
+        log.info("p_lanes_ready", version=VERSION)
         yield
         log.info("p_lanes_shutting_down")
 
@@ -106,26 +113,19 @@ async def lifespan(app: FastAPI):
 # App
 # ==================================================
 
-app = FastAPI(title="p-lanes", lifespan=lifespan)
+app = FastAPI(title="p-lanes", version=VERSION, lifespan=lifespan)
 
 
 # ==================================================
 # Pipeline -- Blocking
 # ==================================================
 
-async def handle_message(
-    user_id: str,
-    message: str,
-    conversation_id: str | None = None,
-) -> str:
-    user = slots.get_user(user_id)
+async def handle_message(envelope: MessageEnvelope) -> str:
+    user = slots.get_user(envelope.user_id)
+    if user is None:
+        return "Access denied."
 
-    # build pipeline context
-    ctx = PipelineContext(
-        user=user,
-        raw_message=message,
-        conversation_id=conversation_id,
-    )
+    ctx = PipelineContext(user=user, envelope=envelope)
 
     # --- classifier + enricher ---
     ctx = await svc.run_pre_processor(ctx)
@@ -151,16 +151,14 @@ async def handle_message(
             try:
                 response = await llm.call(user, prompt)
             except LLMContextOverflow:
-                # still overflowing after summarization -- something
-                # is seriously wrong, but don't brick the user
                 log.error("context_overflow_after_summarize",
                            user_id=user.user_id)
                 return "My memory is full. I've cleaned up what I can -- try again."
 
-        ctx.response_text  = response.content
-        ctx.total_tokens   = response.total_tokens
-        ctx.truncated      = response.truncated
-        ctx.elapsed        = response.elapsed
+        ctx.response_text = response.content
+        ctx.total_tokens  = response.total_tokens
+        ctx.truncated     = response.truncated
+        ctx.elapsed       = response.elapsed
 
         # fire background summarization if critical
         if user.flag_crit:
@@ -172,7 +170,8 @@ async def handle_message(
     result = ctx.final_output or ctx.response_text
 
     # broadcast to any listeners (no-op if disabled)
-    broadcast.publish(user_id, {"event": "response", "data": result})
+    # TODO: extend broadcast to filter by device_id for multi-satellite routing
+    broadcast.publish(user.user_id, {"event": "response", "data": result})
 
     return result
 
@@ -181,19 +180,13 @@ async def handle_message(
 # Pipeline -- Streaming
 # ==================================================
 
-async def handle_stream(
-    user_id: str,
-    message: str,
-    conversation_id: str | None = None,
-) -> AsyncIterator[str]:
-    user = slots.get_user(user_id)
+async def handle_stream(envelope: MessageEnvelope) -> AsyncIterator[str]:
+    user = slots.get_user(envelope.user_id)
+    if user is None:
+        yield "Access denied."
+        return
 
-    # build pipeline context
-    ctx = PipelineContext(
-        user=user,
-        raw_message=message,
-        conversation_id=conversation_id,
-    )
+    ctx = PipelineContext(user=user, envelope=envelope)
 
     # --- classifier + enricher ---
     ctx = await svc.run_pre_processor(ctx)
@@ -219,7 +212,7 @@ async def handle_stream(
             async for chunk in llm.call_stream(user, prompt):
                 accumulated.append(chunk)
                 yield chunk
-                broadcast.publish(user_id, {"event": "token", "data": chunk})
+                broadcast.publish(user.user_id, {"event": "token", "data": chunk})
         except LLMContextOverflow:
             # context full -- summarize and retry once
             accumulated.clear()
@@ -228,7 +221,7 @@ async def handle_stream(
                 async for chunk in llm.call_stream(user, prompt):
                     accumulated.append(chunk)
                     yield chunk
-                    broadcast.publish(user_id, {"event": "token", "data": chunk})
+                    broadcast.publish(user.user_id, {"event": "token", "data": chunk})
             except LLMContextOverflow:
                 log.error("stream_context_overflow_after_summarize",
                            user_id=user.user_id)
@@ -244,16 +237,14 @@ async def handle_stream(
         yield ctx.response_text
 
     # --- responder + finalizer (silent, side effects only) ---
-    # populate response_text and metadata so post-processor
-    # modules have access to the complete response (e.g. TTS, logging)
-    ctx.response_text  = "".join(accumulated)
-    ctx.total_tokens   = user.last_total_tokens
-    ctx.elapsed        = user.last_elapsed
-    ctx.truncated      = user.last_truncated
+    ctx.response_text = "".join(accumulated)
+    ctx.total_tokens  = user.last_total_tokens
+    ctx.elapsed       = user.last_elapsed
+    ctx.truncated     = user.last_truncated
     ctx = await svc.run_post_processor(ctx)
 
     # broadcast done to any listeners
-    broadcast.publish(user_id, {"event": "done", "data": ""})
+    broadcast.publish(user.user_id, {"event": "done", "data": ""})
 
 
 # ==================================================

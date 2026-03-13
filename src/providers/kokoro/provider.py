@@ -1,8 +1,8 @@
-# providers/kokoro.py
+# providers/kokoro/provider.py
 #
 # Author:  Logicish
 # Company: Logic-Ish Designs
-# Date:    3/9/2026
+# Date:    3/13/2026
 #
 # ==================================================
 # TTS provider — wraps the voice service (CT 104).
@@ -10,23 +10,28 @@
 # No retry on failure — caller gets empty bytes and
 # falls back to text-only response.
 #
-# Knows about: config (TTS_*), providers.base.
+# Self-contained: reads providers/kokoro/config.yaml.
+# Does not touch core config.
+#
+# Knows about: providers.base only.
 # ==================================================
 
 # ==================================================
 # Imports
 # ==================================================
 import time
+from pathlib import Path
 
 import aiohttp
 import structlog
+import yaml
 
-import config
 from providers.base import TTSProvider
 
 log = structlog.get_logger()
 
-_HEALTH_TTL = 10.0  # seconds between health rechecks
+_HEALTH_TTL  = 10.0                                         # seconds between health rechecks
+_CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
 
 # ==================================================
@@ -35,7 +40,9 @@ _HEALTH_TTL = 10.0  # seconds between health rechecks
 
 class KokoroProvider(TTSProvider):
 
-    def __init__(self):
+    def __init__(self, cfg: dict):
+        self._url:          str   = cfg["url"]
+        self._timeout:      int   = cfg.get("timeout", 30)
         self._session:      aiohttp.ClientSession | None = None
         self._ready:        bool  = False
         self._health_cache: bool  = False
@@ -59,13 +66,13 @@ class KokoroProvider(TTSProvider):
 
     async def start(self) -> bool:
         self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=config.TTS_TIMEOUT)
+            timeout=aiohttp.ClientTimeout(total=self._timeout)
         )
         self._ready = await self._check_health()
         if self._ready:
-            log.info("kokoro_ready", url=config.TTS_URL)
+            log.info("kokoro_ready", url=self._url)
         else:
-            log.warning("kokoro_not_ready", url=config.TTS_URL)
+            log.warning("kokoro_not_ready", url=self._url)
         return self._ready
 
     async def stop(self) -> None:
@@ -75,7 +82,7 @@ class KokoroProvider(TTSProvider):
             self._session = None
 
     # --------------------------------------------------
-    # Health check (cached)
+    # Health check (TTL-cached)
     # --------------------------------------------------
 
     async def _check_health(self) -> bool:
@@ -83,11 +90,9 @@ class KokoroProvider(TTSProvider):
         if now - self._health_ts < _HEALTH_TTL:
             return self._health_cache
         try:
-            async with self._session.get(
-                f"{config.TTS_URL}/health"
-            ) as resp:
+            async with self._session.get(f"{self._url}/health") as resp:
                 data = await resp.json()
-                ok = resp.status == 200 and data.get("ready", False)
+                ok   = resp.status == 200 and data.get("ready", False)
         except Exception as e:
             log.warning("kokoro_health_check_failed", error=str(e))
             ok = False
@@ -121,7 +126,7 @@ class KokoroProvider(TTSProvider):
 
         try:
             async with self._session.post(
-                f"{config.TTS_URL}/synthesize",
+                f"{self._url}/synthesize",
                 json=payload,
             ) as resp:
                 if resp.status != 200:
@@ -131,7 +136,7 @@ class KokoroProvider(TTSProvider):
                                 body=body[:200])
                     return b""
 
-                audio = await resp.read()
+                audio    = await resp.read()
                 duration = resp.headers.get("X-Audio-Duration", "?")
                 proc     = resp.headers.get("X-Processing-Time", "?")
                 log.debug("kokoro_synthesized",

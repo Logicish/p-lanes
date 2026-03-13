@@ -155,14 +155,15 @@ The voice control example never touches the LLM. The classifier identifies the i
 
 ## 🗺️ Roadmap
 
-p-lanes is currently in active development. v0.3.0 completed the architectural transition to a modular "microkernel" structure. v0.4.0 focused on core hardening, voice pipeline, and external integration.
+p-lanes is currently in active development. v0.3.0 completed the architectural transition to a modular "microkernel" structure. v0.4.0 focused on core hardening, voice pipeline, and external integration. v0.5.0 completed provider isolation and the normalized input contract.
 
 ### Project History
 
 - **v0.1.0:** Monolithic structure. Proven concept with full text-chat functionality. (Modular nightmare.)
 - **v0.2.0:** First major redesign. Ported to Python package format and separated core logic from modules.
 - **v0.3.0:** Architectural split into drop-in components. Modules and providers self-contained with auto-discovery, self-declared manifests, and isolated config files. Core config no longer touched by addons.
-- **v0.4.0:** (Current) Core hardening — utility lane full implementation, summarization double-fire and gate-leak fixes, security escalation fix, circular import refactor (`core/gates.py`), streaming post-processor fix, unsafe SSE JSON fix. Voice pipeline — Whisper STT and Kokoro TTS providers, WebSocket `/channel/voice` endpoint. HAOS custom integration — conversation, STT, and TTS entities with user name routing. `users.yaml` split to keep real names out of git.
+- **v0.4.0:** Core hardening — utility lane full implementation, summarization double-fire and gate-leak fixes, security escalation fix, circular import refactor (`core/gates.py`), streaming post-processor fix, unsafe SSE JSON fix. Voice pipeline — Whisper STT and Kokoro TTS providers, WebSocket `/channel/voice` endpoint. HAOS custom integration — conversation, STT, and TTS entities with user name routing. `users.yaml` split to keep real names out of git.
+- **v0.5.0:** (Current) Provider isolation — each provider is a fully self-contained package with its own config, no provider config in core. `MessageEnvelope` normalized input contract — all channels (text, voice, API, HA) normalize to the same envelope before core; pipeline carries it throughout. `device_id` return address for future multi-satellite routing. `TranscribeResult` replaces bare string from STT providers, carrying language and confidence metadata. `get_user(None)` guest fallback for unidentified speakers (voice print path).
 
 ### Development Status
 
