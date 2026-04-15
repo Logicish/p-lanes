@@ -1,24 +1,23 @@
-# providers/whisper/__init__.py
+# providers/embeddings/__init__.py
 #
 # Author:  Logicish
 # Company: Logic-Ish Designs
-# Date:    3/13/2026
+# Date:    3/19/2026
 #
 # ==================================================
-# Whisper STT provider entry point.
+# Embedding provider entry point.
 # Exposes register() — the standardized hook that
 # autodiscover() calls. Loads its own config, checks
 # enabled flag, and registers with core if active.
 #
 # Knows about: providers (registry only), providers.base,
-#              providers.whisper.provider.
+#              providers.embeddings.provider.
 # ==================================================
 
 from pathlib import Path
 
 import structlog
-
-from core.secrets import load_yaml
+import yaml
 
 log = structlog.get_logger()
 
@@ -28,16 +27,17 @@ _CONFIG_PATH = Path(__file__).parent / "config.yaml"
 def register() -> None:
     """Load config, check enabled flag, register with core."""
     import providers
-    from providers.whisper.provider import WhisperProvider
+    from providers.embeddings.provider import EmbeddingsProvider
 
     if not _CONFIG_PATH.exists():
-        log.error("whisper_config_missing", path=str(_CONFIG_PATH))
+        log.error("embeddings_config_missing", path=str(_CONFIG_PATH))
         return
 
-    cfg = load_yaml(_CONFIG_PATH)
+    with open(_CONFIG_PATH) as f:
+        cfg = yaml.safe_load(f) or {}
 
     if not cfg.get("enabled", False):
-        log.info("whisper_disabled")
+        log.info("embeddings_disabled")
         return
 
-    providers.register_provider(WhisperProvider(cfg))
+    providers.register_provider(EmbeddingsProvider(cfg))

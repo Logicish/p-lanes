@@ -221,11 +221,11 @@ def _is_context_overflow(status: int, error_text: str) -> bool:
 # Inference -- Blocking
 # ==================================================
 
-async def call(user: User, message: str) -> "LLMResponse":
+async def call(user: User, message: str, temperature_override: float | None = None) -> "LLMResponse":
     user.add_message("user", message)
     messages = user.build_messages()
 
-    payload = _build_payload(user, messages, stream=False)
+    payload = _build_payload(user, messages, stream=False, temperature_override=temperature_override)
     t0 = time.perf_counter()
 
     try:
@@ -254,7 +254,7 @@ async def call(user: User, message: str) -> "LLMResponse":
 
         # attempt crash recovery -- retry once if successful
         if await attempt_recovery():
-            return await _retry_call(user, message)
+            return await _retry_call(user, message, temperature_override=temperature_override)
 
         raise LLMCallError(f"LLM unreachable after recovery: {e}") from e
 
@@ -280,22 +280,22 @@ async def call(user: User, message: str) -> "LLMResponse":
     )
 
 
-async def _retry_call(user: User, message: str) -> "LLMResponse":
+async def _retry_call(user: User, message: str, temperature_override: float | None = None) -> "LLMResponse":
     # single retry after successful recovery -- message is already
     # removed from history by the caller, so call() re-adds it
     log.info("llm_retrying_after_recovery", user_id=user.user_id)
-    return await call(user, message)
+    return await call(user, message, temperature_override=temperature_override)
 
 
 # ==================================================
 # Inference -- Streaming (SSE)
 # ==================================================
 
-async def call_stream(user: User, message: str) -> AsyncIterator[str]:
+async def call_stream(user: User, message: str, temperature_override: float | None = None) -> AsyncIterator[str]:
     user.add_message("user", message)
     messages = user.build_messages()
 
-    payload = _build_payload(user, messages, stream=True)
+    payload = _build_payload(user, messages, stream=True, temperature_override=temperature_override)
     full_response = []
     total_tokens = 0
     truncated = False
@@ -363,7 +363,7 @@ async def call_stream(user: User, message: str) -> AsyncIterator[str]:
             if await attempt_recovery():
                 log.info("llm_stream_retrying_after_recovery",
                          user_id=user.user_id)
-                async for chunk in call_stream(user, message):
+                async for chunk in call_stream(user, message, temperature_override=temperature_override):
                     yield chunk
                 return
 
@@ -403,7 +403,25 @@ async def call_internal(
     temperature: float = 0.3,
     max_tokens: int = 512,
     fallback_slot: int | None = None,
+    backend: str = "local",
 ) -> "LLMResponse":
+    # external backend routing (Gemini Flash etc.)
+    if backend != "local":
+        from core import gemini as _gemini
+        if _gemini.is_configured():
+            try:
+                return await _gemini.call(messages, temperature, max_tokens)
+            except NotImplementedError:
+                log.warning("external_backend_not_implemented",
+                            backend=backend, fallback="local")
+            except Exception as e:
+                log.warning("external_backend_failed",
+                            backend=backend, error=str(e), fallback="local")
+        else:
+            log.debug("external_backend_not_configured",
+                      backend=backend, fallback="local")
+        # fall through to local
+
     # determine which slot to use
     if UTILITY_ENABLED:
         slot_id = SLOT_MAP.get("utility")
@@ -479,12 +497,13 @@ async def call_utility(
     messages: list[dict],
     temperature: float = 0.3,
     max_tokens: int = 512,
+    fallback_slot: int | None = None,
 ) -> "LLMResponse":
     return await call_internal(
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
-        fallback_slot=None,
+        fallback_slot=fallback_slot,
     )
 
 
@@ -492,19 +511,20 @@ async def call_utility(
 # Shared Helpers
 # ==================================================
 
-def _build_payload(user: User, messages: list[dict], stream: bool) -> dict:
+def _build_payload(user: User, messages: list[dict], stream: bool,
+                   temperature_override: float | None = None) -> dict:
     return {
-        "model":             "local",
-        "messages":          messages,
-        "temperature":       user.temperature,
-        "min_p":             user.min_p,
-        "top_k":             user.top_k,
-        "repeat_penalty":    user.repeat_penalty,
-        "frequency_penalty": user.frequency_penalty,
-        "max_tokens":        user.max_tokens,
-        "stream":            stream,
-        "id_slot":           user.slot,
-        "cache_prompt":      True,
+        "model":            "local",
+        "messages":         messages,
+        "temperature":      temperature_override if temperature_override is not None else user.temperature,
+        "top_p":            user.top_p,
+        "top_k":            user.top_k,
+        "min_p":            user.min_p,
+        "presence_penalty": user.presence_penalty,
+        "max_tokens":       user.max_tokens,
+        "stream":           stream,
+        "id_slot":          user.slot,
+        "cache_prompt":     True,
     }
 
 

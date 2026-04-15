@@ -1,0 +1,6 @@
+# providers/embeddings/config.yaml
+
+enabled: true
+model: "BAAI/bge-m3"
+device: "cuda"
+dim: 1024

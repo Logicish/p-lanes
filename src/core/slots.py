@@ -20,6 +20,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -30,10 +31,10 @@ from config import (
     USER_DATA_ROOT,
     USER_IDLE_TIMEOUT,
     DEFAULT_TEMPERATURE,
-    DEFAULT_MIN_P,
+    DEFAULT_TOP_P,
     DEFAULT_TOP_K,
-    DEFAULT_REPEAT_PENALTY,
-    DEFAULT_FREQUENCY_PENALTY,
+    DEFAULT_MIN_P,
+    DEFAULT_PRESENCE_PENALTY,
     DEFAULT_MAX_TOKENS,
     BRAIN_NAME,
     BRAIN_DESCRIPTION,
@@ -55,23 +56,25 @@ class User:
     persona:        str
     voice_id:       str            = ""
     rag_scope:      list[str]      = field(default_factory=list)
+    area:           str            = ""   # user's home area, e.g. "master_bedroom"
 
     # runtime state
-    conversation_history: list[dict] = field(default_factory=list)
-    summary:        str            = ""
-    flag_warn:      bool           = False
-    flag_crit:      bool           = False
-    is_idle_flag:   bool           = False
-    last_active:    float          = field(default_factory=time.time)
-    slot_lock:      asyncio.Lock   = field(default_factory=asyncio.Lock)
+    conversation_history:      list[dict]   = field(default_factory=list)
+    summary:                   str          = ""
+    flag_warn:                 bool         = False
+    flag_crit:                 bool         = False
+    is_idle_flag:              bool         = False
+    session_boundary_injected: bool         = False
+    last_active:               float        = field(default_factory=time.time)
+    slot_lock:                 asyncio.Lock = field(default_factory=asyncio.Lock)
 
     # sampling params (loaded from profile or defaults)
-    temperature:       float = DEFAULT_TEMPERATURE
-    min_p:             float = DEFAULT_MIN_P
-    top_k:             int   = DEFAULT_TOP_K
-    repeat_penalty:    float = DEFAULT_REPEAT_PENALTY
-    frequency_penalty: float = DEFAULT_FREQUENCY_PENALTY
-    max_tokens:        int   = DEFAULT_MAX_TOKENS
+    temperature:      float = DEFAULT_TEMPERATURE
+    top_p:            float = DEFAULT_TOP_P
+    top_k:            int   = DEFAULT_TOP_K
+    min_p:            float = DEFAULT_MIN_P
+    presence_penalty: float = DEFAULT_PRESENCE_PENALTY
+    max_tokens:       int   = DEFAULT_MAX_TOKENS
 
     # last response metadata (set by llm.call_stream for
     # post-processor access — not persisted to profile)
@@ -102,6 +105,7 @@ class User:
     def touch(self):
         self.last_active = time.time()
         self.is_idle_flag = False
+        self.session_boundary_injected = False
 
     def is_idle(self) -> bool:
         idle = (time.time() - self.last_active) > USER_IDLE_TIMEOUT
@@ -115,7 +119,8 @@ class User:
         self.touch()
 
     def build_messages(self) -> list[dict]:
-        system_content = self.persona
+        now = datetime.now().strftime("%-m/%-d/%Y %H%M")
+        system_content = f"date/time: {now}\n\n{self.persona}"
         if self.summary:
             system_content += f"\n\n[Conversation summary so far]:\n{self.summary}"
         return [
@@ -127,6 +132,20 @@ class User:
         self.conversation_history = []
         self.flag_warn = False
         self.flag_crit = False
+
+    def inject_session_boundary(self):
+        if not self.is_idle() or not self.conversation_history or self.session_boundary_injected:
+            return
+        self.conversation_history.append({
+            "role": "user",
+            "content": "[idle timeout — session ended]",
+        })
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": "[Understood. I'll treat your next message as the start of a new conversation.]",
+        })
+        self.session_boundary_injected = True
+        log.info("session_boundary_injected", user_id=self.user_id)
 
 
 # ==================================================
@@ -162,6 +181,7 @@ def _load_profile(user_id: str) -> User:
             persona        = data.get("persona", persona)
             voice_id       = data.get("voice_id", voice_id)
             rag_scope      = data.get("rag_scope", rag_scope)
+            area           = data.get("area", "")
             # security_level intentionally NOT loaded from profile.
             # config.yaml is the sole authority — prevents escalation
             # via user-writable profile.json files.
@@ -178,6 +198,7 @@ def _load_profile(user_id: str) -> User:
         persona=persona,
         voice_id=voice_id,
         rag_scope=rag_scope,
+        area=area,
     )
 
     if summary_path.exists():
@@ -199,6 +220,7 @@ def save_profile(user: User):
             "persona":        user.persona,
             "voice_id":       user.voice_id,
             "rag_scope":      user.rag_scope,
+            "area":           user.area,
         }
         user.profile_path.write_text(json.dumps(profile_data, indent=2))
         user.summary_path.write_text(user.summary)

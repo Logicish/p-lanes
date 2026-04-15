@@ -1,0 +1,4 @@
+# providers/sqlite/config.yaml
+
+enabled: true
+db_path: "/var/lib/p-lanes/db/p-lanes.db"

@@ -17,7 +17,8 @@
 from pathlib import Path
 
 import structlog
-import yaml
+
+from core.secrets import load_yaml
 
 log = structlog.get_logger()
 
@@ -33,8 +34,7 @@ def register() -> None:
         log.error("kokoro_config_missing", path=str(_CONFIG_PATH))
         return
 
-    with open(_CONFIG_PATH) as f:
-        cfg = yaml.safe_load(f) or {}
+    cfg = load_yaml(_CONFIG_PATH)
 
     if not cfg.get("enabled", False):
         log.info("kokoro_disabled")

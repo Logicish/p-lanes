@@ -14,8 +14,8 @@ brain:
 paths:
   log_file: "/var/log/p-lanes/p-lanes.log"
   user_data_root: "/var/lib/p-lanes/users"
-  model: "/var/lib/models/Qwen_Qwen3-VL-8B-Instruct-Q6_K.gguf"
-  projector: "/var/lib/models/mmproj-Qwen3VL-8B-Instruct-F16.gguf"
+  model: "/var/lib/models/Qwen_Qwen3.5-9B-Q5_K_M.gguf"
+  projector: "/var/lib/models/mmproj-Qwen3.5-9B-f16.gguf"
   llama_server: "/opt/llama.cpp/build/bin/llama-server"
 
 # ==================================================
@@ -34,7 +34,9 @@ llm:
   timeout: 60             # seconds — http response timeout
   startup_timeout: 90     # seconds — wait for server to become ready
   gpu_layers: 99
-  flash_attn: false
+  flash_attn: true
+  mmproj_offload: true
+  reasoning_off: true
   mlock: false
   kv_cache_type: "q8_0"
   recovery:
@@ -80,7 +82,7 @@ summarization:
 # Idle / Background Checks
 # ==================================================
 idle:
-  timeout: 300            # seconds before user is considered idle
+  timeout: 900            # seconds before user is considered idle (15 minutes)
   check_interval: 120     # seconds between idle + health check cycles
 
 # ==================================================
@@ -88,10 +90,10 @@ idle:
 # ==================================================
 sampling:
   temperature: 0.7
-  min_p: 0.05
-  top_k: 40
-  repeat_penalty: 1.1
-  frequency_penalty: 0.0
+  top_p: 0.8
+  top_k: 20
+  min_p: 0.0
+  presence_penalty: 1.5
   max_tokens: 512
 
 # ==================================================
@@ -116,7 +118,96 @@ utility:
 # Module Permissions
 # ==================================================
 # module_name: minimum_security_level
-module_permissions: {}
+module_permissions:
+  semantic_router: 0    # GUEST — must run for everyone so intent gets classified
+  hello_world:     0    # GUEST — greeting handler, open to all
+  flag_reply:        1    # USER  — guests cannot flag responses
+  response_verifier: 0    # GUEST — intent gate controls eligibility, not user level
+  ha_query:        1    # USER  — jj and above can query state (read-only)
+  entity_enricher: 1    # USER  — early gate; device_control enforces per-domain security
+  device_control:  0    # GUEST — module owns its own security via device_domain_permissions
+  weather_query:   0    # GUEST — everyone can ask about the weather
+  timer:           1    # USER  — jj and above can set timers, guest cannot
+  rag_enricher:    0    # GUEST — everyone gets RAG context enrichment
+  web_search:      0    # GUEST — everyone can search the web
+
+# ==================================================
+# Module Priorities
+# ==================================================
+# Controls execution order within a phase (lower = runs first).
+# Modules not listed default to 50. Ties are broken alphabetically.
+module_priorities:
+  flag_reply:      5    # before semantic_router so it intercepts first
+  entity_enricher: 10   # must run before device_control
+  device_control:  20
+  rag_enricher:    30   # after entity_enricher, before LLM processor
+
+# ==================================================
+# Device Domain Permissions
+# ==================================================
+# Maps minimum security level → domains unlocked at that level.
+# Access is cumulative: level 2 gets all domains from level 1 and 2.
+# Users not reaching level 1 (GUEST) cannot control any devices.
+device_domain_permissions:
+  1: ["light", "switch", "fan", "input_boolean"]
+  2: ["climate", "cover"]
+  3: ["lock"]
+
+# ==================================================
+# Web Crawler (Jina Reader)
+# ==================================================
+# Scheduled nightly crawl of configured URLs.
+# URL list:   /var/lib/p-lanes/crawler/urls.yaml
+# Output:     /var/lib/p-lanes/crawler/pre_process/
+# Raw Jina output is written here for a separate
+# formatter/cleaner process to process into RAG.
+# ==================================================
+crawler:
+  enabled: true
+  cron: "0 23 * * *"         # run at 2300 nightly
+  max_duration: 3600          # stop after 1 hour
+  requires_idle: true         # skip if any user is active
+  rate_limit: 10              # max fetches per minute
+  url_list: "/var/lib/p-lanes/crawler/urls.yaml"
+  output_dir: "/var/lib/p-lanes/crawler/pre_process"
+  jina_url: "https://r.jina.ai"
+  jina_timeout: 15            # seconds per page
+  jina_max_chars: 8000        # max chars to write per page
+
+# ==================================================
+# Gemini Flash (external inference backend)
+# ==================================================
+# Used for web search, self-healing, and tasks where
+# an external LLM is preferred over local inference.
+# Set enabled: true and add gemini_api_key to secrets.yaml.
+# API key is read from secrets.yaml — not stored here.
+# ==================================================
+gemini:
+  enabled: true
+  model: "gemini-2.5-flash"
+  # intents eligible for response verification — home-aware intents excluded
+  verify_intents: ["general", ""]
+  rate_limits:
+    rpm_cap: 8    # stay under Google's 10 RPM limit
+    rpd_cap: 200  # conservative buffer under 250 RPD free tier
+
+# ==================================================
+# Web Search (SearXNG + Jina Reader)
+# ==================================================
+# SearXNG: self-hosted metasearch at localhost:8888.
+# Jina Reader: full-page extraction via r.jina.ai.
+#   Optional API key in secrets.yaml (jina_api_key).
+#   Without a key: works at 20 RPM (sufficient for household use).
+# ==================================================
+web_search:
+  searxng_url: "http://127.0.0.1:8888/search"
+  result_count: 5               # results to fetch from SearXNG
+  timeout: 8                    # seconds — SearXNG query timeout
+  jina_enabled: true            # fetch full content for thin snippets
+  jina_url: "https://r.jina.ai" # Jina Reader base URL
+  jina_timeout: 10              # seconds — Jina fetch timeout
+  jina_snippet_threshold: 150   # chars — fetch full page if snippet shorter than this
+  jina_max_chars: 2000          # max chars to inject from full-page fetch
 
 # ==================================================
 # Providers

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 if TYPE_CHECKING:
-    from providers.base import Provider, STTProvider, TTSProvider
+    from providers.base import Provider, STTProvider, TTSProvider, EmbeddingProvider
 
 log = structlog.get_logger()
 
@@ -66,6 +66,24 @@ def get_tts() -> "TTSProvider | None":
     from providers.base import TTSProvider
     for p in _providers.values():
         if isinstance(p, TTSProvider):
+            return p
+    return None
+
+
+def get_embedder() -> "EmbeddingProvider | None":
+    """Return the first registered embedding provider, or None."""
+    from providers.base import EmbeddingProvider
+    for p in _providers.values():
+        if isinstance(p, EmbeddingProvider):
+            return p
+    return None
+
+
+def get_db() -> "SqliteProvider | None":
+    """Return the registered SQLite provider, or None."""
+    from providers.sqlite.provider import SqliteProvider
+    for p in _providers.values():
+        if isinstance(p, SqliteProvider):
             return p
     return None
 

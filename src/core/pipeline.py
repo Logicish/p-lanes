@@ -49,6 +49,10 @@ class PipelineContext:
     enrichments: list[dict] = field(default_factory=list)
     # each enrichment: {"source": "rag", "content": "..."}
 
+    # --- inter-module structured data ---
+    metadata: dict = field(default_factory=dict)
+    # keyed by module name convention, e.g. metadata["resolved_entities"]
+
     # --- processor output ---
     response_text: str   = ""
     total_tokens:  int   = 0
@@ -65,6 +69,9 @@ class PipelineContext:
     aborted:        bool = False
     abort_reason:   str  = ""
     skip_processor: bool = False
+
+    # --- sampling overrides (set by classifier, applied by processor) ---
+    temperature_override: float | None = None
 
     # --- envelope convenience accessors ---
 

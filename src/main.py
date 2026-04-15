@@ -33,7 +33,7 @@
 # Version
 # ==================================================
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 # ==================================================
 # Imports
@@ -49,7 +49,7 @@ from fastapi import FastAPI
 import config
 from config import LLM_TIMEOUT
 from core.log import setup_logging
-from core import llm, slots, summarizer, broadcast
+from core import llm, slots, summarizer, broadcast, scheduler
 from core.llm import LLMContextOverflow
 from core.envelope import MessageEnvelope
 from core.pipeline import PipelineContext
@@ -71,8 +71,9 @@ async def lifespan(app: FastAPI):
     # initialize all user slots
     slots.init_all_users()
 
-    # discover and register modules
+    # discover and register modules + scheduled jobs
     import modules  # noqa: F401
+    scheduler.discover_jobs()
 
     # discover and register providers
     # each provider subpackage reads its own config and registers itself
@@ -89,15 +90,17 @@ async def lifespan(app: FastAPI):
         # start providers (non-fatal — degraded mode if unavailable)
         await providers.start_all()
 
-        # start background tasks (scheduler + idle/health loop)
+        # start background tasks (summarizer scheduler + idle/health loop + job scheduler)
         await summarizer.start_scheduler()
         await summarizer.start_background_loop()
+        await scheduler.start()
 
         log.info("p_lanes_ready", version=VERSION)
         yield
         log.info("p_lanes_shutting_down")
 
         # stop background tasks
+        await scheduler.stop()
         await summarizer.stop_scheduler()
         await summarizer.stop_background_loop()
 
@@ -144,12 +147,12 @@ async def handle_message(envelope: MessageEnvelope) -> str:
         prompt = ctx.build_enriched_prompt()
 
         try:
-            response = await llm.call(user, prompt)
+            response = await llm.call(user, prompt, temperature_override=ctx.temperature_override)
         except LLMContextOverflow:
             # context full -- summarize and retry once
             await summarizer.emergency_summarize(user)
             try:
-                response = await llm.call(user, prompt)
+                response = await llm.call(user, prompt, temperature_override=ctx.temperature_override)
             except LLMContextOverflow:
                 log.error("context_overflow_after_summarize",
                            user_id=user.user_id)
@@ -163,6 +166,11 @@ async def handle_message(envelope: MessageEnvelope) -> str:
         # fire background summarization if critical
         if user.flag_crit:
             asyncio.create_task(summarizer.summarize_if_needed(user))
+
+    elif ctx.response_text:
+        # module handled the request (skip_processor) — record the exchange
+        user.add_message("user", ctx.raw_message)
+        user.add_message("assistant", ctx.response_text)
 
     # --- responder + finalizer ---
     ctx = await svc.run_post_processor(ctx)
@@ -209,7 +217,7 @@ async def handle_stream(envelope: MessageEnvelope) -> AsyncIterator[str]:
         prompt = ctx.build_enriched_prompt()
 
         try:
-            async for chunk in llm.call_stream(user, prompt):
+            async for chunk in llm.call_stream(user, prompt, temperature_override=ctx.temperature_override):
                 accumulated.append(chunk)
                 yield chunk
                 broadcast.publish(user.user_id, {"event": "token", "data": chunk})
@@ -218,7 +226,7 @@ async def handle_stream(envelope: MessageEnvelope) -> AsyncIterator[str]:
             accumulated.clear()
             await summarizer.emergency_summarize(user)
             try:
-                async for chunk in llm.call_stream(user, prompt):
+                async for chunk in llm.call_stream(user, prompt, temperature_override=ctx.temperature_override):
                     accumulated.append(chunk)
                     yield chunk
                     broadcast.publish(user.user_id, {"event": "token", "data": chunk})
@@ -233,6 +241,9 @@ async def handle_stream(envelope: MessageEnvelope) -> AsyncIterator[str]:
             asyncio.create_task(summarizer.summarize_if_needed(user))
 
     elif ctx.response_text:
+        # module handled the request (skip_processor) — record the exchange
+        user.add_message("user", ctx.raw_message)
+        user.add_message("assistant", ctx.response_text)
         accumulated.append(ctx.response_text)
         yield ctx.response_text
 

@@ -404,6 +404,49 @@ def create_routes(
         }
 
     # --------------------------------------------------
+    # POST /admin/entity-index/refresh — ADMIN-gated
+    # --------------------------------------------------
+    @app.post("/admin/entity-index/refresh")
+    async def entity_index_refresh(payload: AdminPayload):
+        user_id = payload.user_id.lower().strip()
+        admin, error = _gate_admin(user_id)
+        if error:
+            return error
+
+        from modules.entity_enricher import reset_index
+        reset_index()
+        log.info("entity_index_reset", user_id=admin.user_id)
+        return {
+            "success":   True,
+            "detail":    "Entity index cleared — will rebuild on next device request.",
+            "user_id":   admin.user_id,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    # --------------------------------------------------
+    # POST /admin/rag/ingest — ADMIN-gated
+    # --------------------------------------------------
+    @app.post("/admin/rag/ingest")
+    async def rag_ingest(payload: AdminPayload):
+        user_id = payload.user_id.lower().strip()
+        admin, error = _gate_admin(user_id)
+        if error:
+            return error
+
+        rag = providers.get_provider("rag")
+        if rag is None or not rag.is_ready:
+            return JSONResponse(status_code=503, content={"error": "RAG provider not ready"})
+
+        await rag.trigger_ingest()
+        log.info("rag_ingest_triggered", user_id=admin.user_id)
+        return {
+            "success":   True,
+            "detail":    "RAG ingest task started in background.",
+            "user_id":   admin.user_id,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    # --------------------------------------------------
     # GET /health
     # --------------------------------------------------
     @app.get("/health")

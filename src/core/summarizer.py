@@ -340,7 +340,8 @@ async def _background_loop(interval: int):
                         log.info("guest_history_cleared_on_idle")
                     continue
 
-                # idle summarization for regular users
+                # session boundary + idle summarization for regular users
+                user.inject_session_boundary()
                 if user.flag_warn and user.is_idle():
                     await summarize_if_needed(user)
 
@@ -502,9 +503,14 @@ async def _run_summarize_llm(
         "Produce an updated summary."
     )
     system_text = (
-        "You are a summarization assistant. Produce a concise summary "
-        "of the conversation below. Preserve key facts, decisions, and "
-        "context the user would need if the conversation continued."
+        "You are a summarization assistant. Produce a concise, updated summary "
+        "of the conversation below. "
+        "Preserve: key facts, user preferences, opinions, questions asked, "
+        "ongoing topics, and anything the user would want to recall later. "
+        "Omit: one-time operational commands (device control, light/switch "
+        "actions, timer events, HA sensor queries) unless they reveal a lasting "
+        "preference or pattern. Keep facts about the user's setup or environment "
+        "only if they are likely to matter again."
     )
 
     estimated_prompt_tokens = (

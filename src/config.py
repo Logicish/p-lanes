@@ -82,6 +82,8 @@ LLM_TIMEOUT         = _cfg["llm"]["timeout"]
 LLM_STARTUP_TIMEOUT = _cfg["llm"]["startup_timeout"]
 GPU_LAYERS          = _cfg["llm"]["gpu_layers"]
 FLASH_ATTN          = _cfg["llm"]["flash_attn"]
+MMPROJ_OFFLOAD      = _cfg["llm"].get("mmproj_offload", False)
+REASONING_OFF       = _cfg["llm"].get("reasoning_off", False)
 MLOCK               = _cfg["llm"]["mlock"]
 KV_CACHE_TYPE       = _cfg["llm"]["kv_cache_type"]
 
@@ -131,10 +133,10 @@ IDLE_CHECK_INTERVAL = _cfg["idle"].get("check_interval", 120)
 # Default Sampling
 # ==================================================
 DEFAULT_TEMPERATURE       = _cfg["sampling"]["temperature"]
-DEFAULT_MIN_P             = _cfg["sampling"]["min_p"]
+DEFAULT_TOP_P             = _cfg["sampling"]["top_p"]
 DEFAULT_TOP_K             = _cfg["sampling"]["top_k"]
-DEFAULT_REPEAT_PENALTY    = _cfg["sampling"]["repeat_penalty"]
-DEFAULT_FREQUENCY_PENALTY = _cfg["sampling"]["frequency_penalty"]
+DEFAULT_MIN_P             = _cfg["sampling"]["min_p"]
+DEFAULT_PRESENCE_PENALTY  = _cfg["sampling"]["presence_penalty"]
 DEFAULT_MAX_TOKENS        = _cfg["sampling"]["max_tokens"]
 
 # ==================================================
@@ -187,6 +189,21 @@ if UTILITY_ENABLED and "utility" not in SLOT_MAP:
 MODULE_PERMISSIONS: dict[str, int] = _cfg.get("module_permissions", {}) or {}
 
 # ==================================================
+# Module Priorities
+# ==================================================
+# Lower number = runs first within a phase. Default 50 if not listed.
+MODULE_PRIORITIES: dict[str, int] = _cfg.get("module_priorities", {}) or {}
+
+# ==================================================
+# Device Domain Permissions
+# ==================================================
+# Cumulative: security level N grants all domains listed at levels <= N.
+DEVICE_DOMAIN_PERMISSIONS: dict[int, list[str]] = {
+    int(k): v
+    for k, v in (_cfg.get("device_domain_permissions", {}) or {}).items()
+}
+
+# ==================================================
 # Logging Config
 # ==================================================
 LOG_LEVEL  = _cfg.get("logging", {}).get("level", "INFO")
@@ -217,7 +234,11 @@ def build_llm_cmd() -> list[str]:
         "--cache-type-v",   KV_CACHE_TYPE,
     ]
     if FLASH_ATTN:
-        cmd.append("--flash-attn")
+        cmd += ["--flash-attn", "on"]
+    if MMPROJ_OFFLOAD:
+        cmd.append("--mmproj-offload")
+    if REASONING_OFF:
+        cmd += ["--reasoning", "off"]
     if MLOCK:
         cmd.append("--mlock")
     return cmd

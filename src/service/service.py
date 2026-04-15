@@ -24,7 +24,7 @@
 # ==================================================
 import structlog
 
-from config import MODULE_PERMISSIONS, SecurityLevel
+from config import MODULE_PERMISSIONS, MODULE_PRIORITIES, SecurityLevel
 from core.events import get_phase, PHASES
 from core.slots import check_permission
 from core.pipeline import PipelineContext
@@ -49,7 +49,9 @@ async def run_phase(phase: str, ctx: PipelineContext) -> PipelineContext:
     if not modules:
         return ctx
 
-    for name, handler in modules.items():
+    ordered = sorted(modules.items(), key=lambda x: (MODULE_PRIORITIES.get(x[0], 50), x[0]))
+
+    for name, handler in ordered:
         required = MODULE_PERMISSIONS.get(name, SecurityLevel.USER)
 
         if not check_permission(ctx.user, required):

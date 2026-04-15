@@ -1,0 +1,221 @@
+# modules/intents.yaml
+#
+# Semantic intent buckets for the embedding classifier.
+# Each bucket needs 5-10 example phrases that clearly
+# represent the intent. More examples = tighter cluster.
+#
+# Rules:
+#   - Keep examples natural — write how users actually speak
+#   - Avoid overlap between buckets (shared vocabulary = bleed)
+#   - The outside_weather / ha_sensor pair needs the most
+#     differentiation — lean on inside/outside signal words
+#
+# confidence_threshold: minimum cosine similarity to accept
+#   a classification. Below this → routes to "general" (LLM).
+#   Start at 0.55 and tune up if you get false positives.
+# ==================================================
+
+confidence_threshold: 0.55    # minimum score to consider a classification
+confidence_required:  0.65    # minimum score for a definitive classification
+                               # scores between threshold and required → fall through to general
+
+# Per-intent confidence overrides. Intents not listed use confidence_required above.
+# local_search is intentionally looser — RAG-first means a false positive is low risk.
+intent_confidence:
+  local_search: 0.60
+
+# Per-intent temperature overrides applied at LLM call time.
+# Intents not listed use the user's profile default.
+# Retrieval/factual intents run low (0.2); conversational stay at user default.
+intent_temperatures:
+  ha_sensor:       0.2
+  outside_weather: 0.2
+  web_search:      0.2
+  local_search:    0.2
+  timer_alarm:     0.2
+  calendar:        0.2
+  device_control:  0.3
+  media_control:   0.3
+
+buckets:
+
+  device_control:
+    - "turn on the lights"
+    - "turn off the lights"
+    - "turn on the kitchen lights"
+    - "turn off the bedroom light"
+    - "turn off the light in the master bedroom"
+    - "turn the living room lights off"
+    - "switch off the bathroom light"
+    - "turn on marilyn's lamp"
+    - "turn off marilyns light"
+    - "switch on jj's light"
+    - "make it brighter"
+    - "make it darker"
+    - "dim the lights"
+    - "dim the bedroom lights"
+    - "set the thermostat to 72"
+    - "turn the heat up"
+    - "turn the AC down"
+    - "make it look like moonlight in here"
+    - "change the lights to blue"
+    - "lock the front door"
+    - "unlock the back door"
+    - "close the garage"
+
+  ha_sensor:
+    - "is the bedroom lamp currently on"
+    - "check if the bedroom light is on"
+    - "is the living room light on right now"
+    - "what is the thermostat currently set to"
+    - "is the front door locked right now"
+    - "check the status of the garage door"
+    - "is the back door currently closed"
+    - "what's the current temperature inside"
+    - "how warm is it in here right now"
+    - "what's the indoor humidity right now"
+    - "which lights are currently on"
+    - "tell me what the bedroom light is doing"
+    - "are any lights on in the house right now"
+    - "what state is the front door lock in"
+    - "what's the indoor temperature right now"
+
+  outside_weather:
+    - "what's the weather like"
+    - "is it going to rain"
+    - "what's the temperature outside"
+    - "do I need an umbrella"
+    - "what's the forecast"
+    - "how cold is it outside"
+    - "is it sunny out"
+    - "what's the weather this week"
+    - "will it snow"
+    - "how hot is it today"
+    - "what's the weather outside right now"
+    - "is it raining out"
+    - "what's the wind like outside"
+    - "what's the weather forecast for tomorrow"
+    - "should I bring a jacket"
+    - "is it going to be hot today"
+    - "will it be cloudy"
+    - "what's the humidity outside"
+    - "is it a good day to go outside"
+
+  media_control:
+    - "play some music"
+    - "pause the music"
+    - "stop the music"
+    - "next track"
+    - "skip this song"
+    - "turn up the volume"
+    - "turn down the volume"
+    - "play something"
+    - "previous song"
+    - "mute the speaker"
+
+  timer_alarm:
+    - "set a timer for 10 minutes"
+    - "remind me in 5 minutes"
+    - "set a 30 second timer"
+    - "timer for 1 hour"
+    - "set a pasta timer for 12 minutes"
+    - "give me 20 minutes"
+    - "wake me up in an hour"
+    - "set an alarm for 15 minutes"
+    - "countdown 45 seconds"
+    - "remind me in half an hour"
+
+  calendar:
+    - "what's on my schedule today"
+    - "what do I have today"
+    - "any meetings today"
+    - "what's my next appointment"
+    - "what's on my calendar"
+    - "do I have anything tomorrow"
+    - "when is my next meeting"
+    - "what's coming up this week on my calendar"
+    - "any appointments this week"
+    - "check my schedule"
+    - "add an event to my calendar"
+    - "remind me about my dentist appointment"
+    - "when is my doctor visit"
+
+  # Direct internet queries — time-sensitive, news, events, live data.
+  # RAG won't have this. Goes straight to web.
+  web_search:
+    - "what's the latest on"
+    - "what's in the news today"
+    - "latest news about"
+    - "what happened with"
+    - "any updates on"
+    - "what are people saying about"
+    - "search for the latest releases of"
+    - "look up the latest version of"
+    - "find the latest news on"
+    - "search online for"
+    - "do a web search for"
+    - "google that for me"
+    - "search that up"
+    - "search the web for"
+    - "what does the community say about"
+    - "what do people think about"
+    - "what's online about"
+    - "is there anything going on near me"
+    - "what's happening in the area this weekend"
+    - "any events near me this weekend"
+    - "what's going on in town"
+    - "any local concerts or shows this weekend"
+    - "is there a festival near me"
+    - "what's playing at the movies this weekend"
+    - "any storms or weather concerns this week"
+    - "is there a hurricane watch near me"
+    - "is it safe to travel to"
+
+  # Local lookup — tries RAG first, falls back to web if nothing found.
+  # "look up X", "find info on X" — could be in local knowledge base.
+  local_search:
+    - "look up the pinouts for"
+    - "look up the specs for"
+    - "look up the datasheet for"
+    - "look up how to"
+    - "look up the settings for"
+    - "look up the recipe for"
+    - "look up the steps for"
+    - "find the pinouts for"
+    - "find the datasheet for"
+    - "find the specs for"
+    - "find out how to make"
+    - "find out how to build"
+    - "find out how to fix"
+    - "search for the pinouts of"
+    - "search for the specs on"
+    - "search for how to"
+    - "pull up the specs for"
+    - "pull up the datasheet for"
+    - "pull up the recipe for"
+    - "do I have anything saved about"
+    - "what does my knowledge base say about"
+    - "check my notes on"
+    - "look in my notes for"
+
+  general:
+    - "what's up"
+    - "how are you"
+    - "how was your day"
+    - "tell me something interesting"
+    - "what do you think about"
+    - "can you help me with"
+    - "I need help"
+    - "talk to me"
+    - "what should I do"
+    - "give me advice"
+    - "how is the server doing"
+    - "how is everything going"
+    - "how does that work"
+    - "what do you know about"
+    - "tell me about"
+    - "explain this to me"
+    - "what is this"
+    - "I have a question"
+    - "just checking in"
+    - "what are you up to"

@@ -1,0 +1,24 @@
+# providers/homeassistant/config.yaml
+# Home Assistant provider configuration.
+
+enabled: true
+url: "http://your-ha-server:8123"
+token: !secret ha_token
+timeout: 10             # seconds — http request timeout
+
+# Domains to fetch when building the entity list for LLM extraction.
+# Add or remove based on what you have in HA.
+domains:
+  - light
+  - switch
+  - climate
+  - lock
+  - cover
+  - fan
+  - input_boolean
+
+# Entity IDs to exclude from the embedding index (e.g. satellite LEDs, virtual devices).
+exclude_entity_ids: []
+
+# Preferred weather entity for weather_query. Falls back to first available if not found.
+weather_entity: "weather.forecast_home"

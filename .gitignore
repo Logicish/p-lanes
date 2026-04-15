@@ -6,3 +6,14 @@ __pycache__/
 
 # Users file — contains real names, never commit
 src/users.yaml
+
+# Secrets file — contains tokens and credentials, never commit
+src/secrets.yaml
+
+# SQLite database and WAL files — runtime data, never commit
+*.db
+*.db-shm
+*.db-wal
+
+# Build artifacts
+*.zip

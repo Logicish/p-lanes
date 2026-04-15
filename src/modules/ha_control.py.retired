@@ -1,0 +1,215 @@
+# modules/ha_control.py
+#
+# Author:  Logicish
+# Company: Logic-Ish Designs
+# Date:    4/2/2026
+#
+# ==================================================
+# Home Assistant device + media control module.
+# Intercepts 'device_control' and 'media_control'
+# intents and executes commands via HA.
+#
+# Flow:
+#   1. Fetch entity states from the HA provider.
+#   2. Send a compact state list + user message to the
+#      LLM to extract the action as JSON.
+#   3. Call the HA service.
+#   4. Return a friendly confirmation.
+#
+# Sets skip_processor = True so commands do NOT
+# go through the user's conversation slot.
+#
+# TODO (media): currently targets any available
+# media_player entity. When multiple satellites exist,
+# this should route to the active satellite based on
+# the originating device_id in the envelope.
+#
+# Security: POWER (2) enforced via module_permissions
+# in config.yaml — guests and jj cannot control devices.
+#
+# Knows about: core/events (register),
+#              core/pipeline (PipelineContext),
+#              providers (get_provider),
+#              config (LLM_URL).
+# ==================================================
+
+# ==================================================
+# Imports
+# ==================================================
+import asyncio
+import json
+
+import aiohttp
+import structlog
+
+import providers
+from config import LLM_URL
+from core.events import register
+from core.pipeline import PipelineContext
+
+log = structlog.get_logger()
+
+# ==================================================
+# LLM extraction prompt
+# ==================================================
+
+_EXTRACT_SYSTEM = """\
+You are a Home Assistant command parser. Extract the exact action from the user message.
+Respond ONLY with a single line of valid JSON. No explanation, no markdown, no code blocks.
+
+Format: {"domain": "light", "service": "turn_on", "entity_id": "light.kitchen", "service_data": {}}
+
+Rules:
+- domain: light, switch, climate, lock, cover, fan, input_boolean, media_player
+- service: use exact HA service names (turn_on, turn_off, toggle, lock, unlock, set_temperature, set_hvac_mode, media_play, media_pause, media_stop, media_next_track, media_previous_track, volume_up, volume_down, volume_set)
+- entity_id: must exactly match one from the provided list
+- service_data: include brightness (0-255), color_name, temperature (number), hvac_mode, volume_level (0.0-1.0) if specified — empty dict if not
+- Name matching: treat possessive variations as the same — "marilyn", "marilyns", "marilyn's" all refer to the same person. Strip or ignore apostrophes and trailing-s when matching names to entity friendly names or aliases.
+- User context: "my", "mine", "my room" refer to the current user shown above. Match them to entities belonging to that user.
+- Area matching: if an entity has an area, match room references to it — "the bedroom", "in here", "the living room" should resolve via area.
+- If the command is ambiguous or the entity cannot be determined, respond: {"error": "unclear"}\
+"""
+
+
+# ==================================================
+# Helpers
+# ==================================================
+
+def _build_state_list(states: list[dict], registry: dict[str, dict] | None = None) -> str:
+    """Build a compact entity list for the LLM prompt.
+    Includes area and aliases when registry data is available."""
+    lines = []
+    for s in states:
+        eid   = s["entity_id"]
+        name  = s.get("attributes", {}).get("friendly_name", eid)
+        state = s.get("state", "unknown")
+
+        parts = [f"{eid}: {name}"]
+
+        if registry:
+            entry   = registry.get(eid, {})
+            area_id = entry.get("area_id", "")
+            aliases = entry.get("aliases", [])
+            if area_id:
+                area_name = area_id.replace("_", " ").title()
+                parts.append(f"area: {area_name}")
+            if aliases:
+                parts.append(f"also: {', '.join(aliases)}")
+
+        parts.append(f"({state})")
+        lines.append(" | ".join(parts))
+    return "\n".join(lines)
+
+
+async def _extract_action(
+    message: str,
+    states: list[dict],
+    user_id: str,
+    registry: dict[str, dict] | None = None,
+) -> dict | None:
+    """Ask the LLM to extract a HA action from the user message.
+    Uses a one-off session — does NOT touch the user's conversation slot."""
+    state_list   = _build_state_list(states, registry)
+    user_content = (
+        f"Current user: {user_id}\n\n"
+        f"Available entities:\n{state_list}\n\n"
+        f"User message: {message}"
+    )
+
+    payload = {
+        "model":       "local",
+        "messages":    [
+            {"role": "system", "content": _EXTRACT_SYSTEM},
+            {"role": "user",   "content": user_content},
+        ],
+        "temperature": 0.1,
+        "max_tokens":  128,
+    }
+
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=10)
+        ) as session:
+            async with session.post(LLM_URL, json=payload) as resp:
+                if resp.status != 200:
+                    log.warning("ha_llm_extract_bad_status", status=resp.status)
+                    return None
+                data = await resp.json()
+                text = data["choices"][0]["message"]["content"].strip()
+                return json.loads(text)
+    except json.JSONDecodeError as e:
+        log.warning("ha_llm_extract_bad_json", error=str(e))
+        return None
+    except Exception as e:
+        log.error("ha_llm_extract_failed", error=str(e))
+        return None
+
+
+# ==================================================
+# Classifier
+# ==================================================
+
+@register("ha_control", "enricher")
+async def handle(ctx: PipelineContext) -> PipelineContext:
+    if ctx.intent not in ("device_control", "media_control"):
+        return ctx
+
+    ha = providers.get_provider("homeassistant")
+    if ha is None or not ha.is_ready:
+        # HA unavailable — fall through to LLM so it can respond gracefully
+        log.warning("ha_provider_unavailable", user_id=ctx.user.user_id)
+        return ctx
+
+    ctx.skip_processor = True
+
+    # fetch entity states and registry in parallel
+    extra = ["media_player"] if ctx.intent == "media_control" else []
+    states, registry = await asyncio.gather(
+        ha.get_states(
+            domains=["light", "switch", "climate", "lock", "cover", "fan", "input_boolean"] + extra
+        ),
+        ha.get_entity_registry(),
+    )
+
+    if not states:
+        ctx.response_text = "I can't reach Home Assistant right now."
+        return ctx
+
+    # ask LLM to extract the action
+    action = await _extract_action(ctx.raw_message, states, ctx.user.user_id, registry)
+
+    if action is None or "error" in action:
+        ctx.response_text = "I'm not sure what you want me to control. Can you be more specific?"
+        return ctx
+
+    domain       = action.get("domain", "")
+    service      = action.get("service", "")
+    entity_id    = action.get("entity_id", "")
+    service_data = action.get("service_data") or {}
+
+    if not all([domain, service, entity_id]):
+        ctx.response_text = "I couldn't figure out what to control. Try again?"
+        return ctx
+
+    # call HA
+    ok = await ha.call_service(domain, service, entity_id, service_data)
+
+    # resolve friendly name for the response
+    friendly = entity_id.replace("_", " ").split(".")[-1]
+    for s in states:
+        if s["entity_id"] == entity_id:
+            friendly = s.get("attributes", {}).get("friendly_name", friendly)
+            break
+
+    if ok:
+        action_label = service.replace("_", " ")
+        ctx.response_text = f"Done — {friendly} {action_label}."
+    else:
+        ctx.response_text = f"Something went wrong trying to control {friendly}."
+
+    log.info("ha_command_executed",
+             domain=domain, service=service,
+             entity_id=entity_id, success=ok,
+             user_id=ctx.user.user_id)
+
+    return ctx

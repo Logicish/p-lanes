@@ -1,0 +1,28 @@
+# providers/rag/config.yaml
+
+enabled: true
+chroma_path: "/var/lib/p-lanes/chroma"
+rag_path:    "/var/lib/p-lanes/rag"
+ingest_on_start: true
+top_k: 4
+
+# Minimum cosine distance for a result to be injected.
+# Results at or above this threshold are dropped before LLM sees them.
+# Tune between 0.30 (strict) and 0.40 (lenient). 0.35 is a safe start.
+distance_threshold: 0.35
+
+# Per-intent collection routing.
+# Maps intent name → list of shared collections to search.
+# Falls back to all shared collections if intent is not listed.
+# User private collection (user_{id}) is always appended regardless.
+collection_routing:
+  general:         [shared_home, shared_cooking, shared_electronics, shared_games, shared_general]
+  "":              [shared_home, shared_cooking, shared_electronics, shared_games, shared_general]
+  cooking:         [shared_cooking, shared_general]
+  device_control:  [shared_home, shared_general]
+  ha_sensor:       [shared_home, shared_general]
+  media_control:   [shared_home, shared_general]
+  outside_weather: [shared_general]
+  timer_alarm:     [shared_general]
+  calendar:        [shared_general]
+  web_search:      [shared_general]

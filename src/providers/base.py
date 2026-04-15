@@ -120,7 +120,7 @@ class TTSProvider(Provider):
         """
         ...
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:
+    async def synthesize_stream(self, text: str) -> AsyncIterator[bytes]:  # type: ignore[override]
         """Streaming synthesis — yields audio chunks as
         sentences are processed. Default implementation
         falls back to non-streaming synthesize().
@@ -134,3 +134,40 @@ class TTSProvider(Provider):
             Audio byte chunks.
         """
         yield await self.synthesize(text)
+
+
+# ==================================================
+# Embedding Provider
+# ==================================================
+
+class EmbeddingProvider(Provider):
+    """Text embedding provider interface.
+    Encodes text into dense vectors for semantic
+    similarity and intent classification.
+    Called by pipeline classifier modules."""
+
+    @abstractmethod
+    def embed(self, texts: list[str]) -> list:
+        """Embed a list of texts synchronously.
+
+        Args:
+            texts: List of strings to encode.
+
+        Returns:
+            List of embedding vectors (numpy arrays).
+        """
+        ...
+
+    @abstractmethod
+    async def embed_async(self, texts: list[str]) -> list:
+        """Embed a list of texts asynchronously.
+        Runs embed() in a thread executor so the
+        event loop is not blocked.
+
+        Args:
+            texts: List of strings to encode.
+
+        Returns:
+            List of embedding vectors (numpy arrays).
+        """
+        ...

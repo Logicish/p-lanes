@@ -1,51 +1,140 @@
 # p-lanes — Architecture
 
-> Authoritative architecture reference for p-lanes. Designed for contributors and LLM coding assistants alike. When in doubt, this document decides.
+> Authoritative architecture reference for p-lanes v0.5.0. When in doubt, this document decides.
 
 ---
 
 ## Table of Contents
 
+- [Explain Like I'm 5](#explain-like-im-5)
 - [Overview](#overview)
+- [Hardware](#hardware)
+- [Pipeline Diagram](#pipeline-diagram)
 - [Package Structure](#package-structure)
 - [Pipeline](#pipeline)
-- [Channels](#channels)
 - [Security Model](#security-model)
+- [Context Object](#context-object)
 - [Providers](#providers)
 - [Modules](#modules)
-- [Context Object](#context-object)
 - [Core Components](#core-components)
-- [System Tools](#system-tools)
-- [Data Flow](#data-flow)
-- [Extensibility](#extensibility)
+- [Data Flow Examples](#data-flow-examples)
 - [Rules for Contributors](#rules-for-contributors)
+
+---
+
+## Explain Like I'm 5
+
+Imagine a house with a few people living in it. Each person can talk to an AI assistant — by voice in the kitchen, or by typing on a phone. The problem with most AI software is that it's slow: every time you talk to it, it has to reload your whole conversation from scratch. That takes seconds.
+
+p-lanes fixes that by giving each person a **reserved seat in GPU memory**. Your conversation stays on the GPU between sessions. When you talk, the AI is already warm and ready — like a person sitting in the room waiting, not one who had to run in from outside.
+
+When a message comes in, it travels through a **pipeline**: a chain of steps where each step does one job. First the system figures out what you're asking (intent). Then it gathers context — home sensor state, personal notes, live web results. Then the AI writes a response. Then the response is sent back as voice or text depending on how the message arrived.
+
+Each step is a **module** — a plug-in file that can be added, removed, or swapped without touching the core. The core just runs whatever modules are registered; it doesn't care what they do.
+
+There are **two security gates**. Gate 1 is at the door: if the system doesn't recognize you, nothing happens. Gate 2 is inside: each module declares the minimum security level needed to use it, and the dispatcher silently skips any module the user isn't cleared for. The AI never makes security decisions.
 
 ---
 
 ## Overview
 
-p-lanes is a microkernel orchestrator for llama.cpp. It pins users to dedicated GPU KV cache slots for near-instant response, routes requests through a modular pipeline, and supports multiple simultaneous I/O channels (voice, chat, vision).
-
-```
-Channel → Transporter → Classifier → Enricher → Processor → Responder → Finalizer → Channel
-```
+p-lanes is a "microkernel" pipeline orchestrator for llama.cpp. It pins users to dedicated GPU KV cache slots for near-instant response, routes requests through a staged module pipeline, and integrates voice and text into one unified conversation per user.
 
 **Core principles:**
-- `main.py` is ~4 lines. All logic lives in core, service, or modules.
-- Modules and providers are drop-in folders with YAML manifests — no manual registration.
-- The LLM is a tool, not a decision maker. Security is enforced at three hard gates.
-- Config.py is core-only. Addons carry their own config files.
+- `main.py` is the kernel. It wires startup, runs the pipeline, and calls the LLM. It contains no feature logic.
+- Modules and providers are drop-in files/folders. The core never imports them directly — they self-register at startup.
+- The LLM is called by the kernel, not by modules. Modules set context; the kernel decides when to call.
+- Security is two hard gates. The LLM never makes access decisions.
+- Config is split: `config.py` owns core settings; each provider reads its own `config.yaml`.
 
-**Hardware (tested build):**
+---
+
+## Hardware
+
+Tested build:
 
 | Component | Spec |
 |---|---|
 | GPU | NVIDIA RTX 5060 Ti 16GB |
 | RAM | 32GB |
-| Host | Proxmox VE (bare-metal hypervisor) |
-| LLM | Qwen3-VL 8B Q6_K_M via llama.cpp |
-| KV Cache | 5 slots × 12k context, Q6 compression |
-| VRAM | ~12.25GB used, ~3GB buffer |
+| Host | Proxmox VE (bare-metal), LXC container for p-lanes + llama.cpp |
+| Model | Qwen3.5-9B-Q5_K_M.gguf + mmproj-Qwen3.5-9B-f16.gguf |
+| KV Cache | 5 slots × 8,192 tokens (40,960 total), q8_0 compression |
+| Flash Attention | Enabled |
+| Reasoning blocks | Disabled at llama-server level |
+
+---
+
+## Pipeline Diagram
+
+```
+  INPUT
+  ─────────────────────────────────────────────
+  POST /channel/chat          WS /channel/voice
+  POST /channel/chat/stream   (audio → STT → text)
+         │                           │
+         └─────────────┬─────────────┘
+                       ▼
+            ┌─────────────────────┐
+            │     TRANSPORTER     │  core/transport.py
+            │     [ GATE 1 ]      │  known user? → 403 if not
+            └──────────┬──────────┘
+                       │ MessageEnvelope
+                       ▼
+            ┌─────────────────────┐
+            │   PipelineContext   │  core/pipeline.py
+            └──────────┬──────────┘
+                       │
+       ┌───────────────▼───────────────┐
+       │       CLASSIFIER PHASE        │
+       │  [ Gate 2 per module ]        │
+       │  ───────────────────────────  │
+       │  flag_reply         [pri  5]  │
+       │  semantic_router    [pri 50]  │ → sets ctx.intent
+       │  hello_world        [pri 50]  │
+       │  weather_query      [pri 50]  │
+       │  timer              [pri 50]  │
+       └───────────────┬───────────────┘
+                       │
+       ┌───────────────▼───────────────┐
+       │        ENRICHER PHASE         │
+       │  [ Gate 2 per module ]        │
+       │  ───────────────────────────  │
+       │  entity_enricher    [pri 10]  │ → ctx.metadata["resolved_entities"]
+       │  device_control     [pri 20]  │ → may set skip_processor = True
+       │  rag_enricher       [pri 30]  │ → ctx.enrichments (knowledge base)
+       │  web_search         [pri 50]  │ → ctx.enrichments (web results)
+       │  ha_query           [pri 50]  │ → ctx.enrichments (sensor state)
+       └───────────────┬───────────────┘
+                       │
+               skip_processor?
+           ┌──── Yes ──┴── No ──────┐
+           │                        ▼
+           │          ┌─────────────────────────┐
+           │          │      LLM PROCESSOR       │  main.py kernel
+           │          │   (pinned llama.cpp slot) │  llm.call() / llm.call_stream()
+           │          │                           │  → ctx.response_text
+           │          └────────────┬─────────────┘
+           │                       │
+           └───────────────────────┤
+                                   ▼
+       ┌───────────────────────────────────────┐
+       │          RESPONDER PHASE              │
+       │  [ Gate 2 per module ]                │
+       │  ─────────────────────────────────    │
+       │  response_verifier  [pri 50]          │ → background Gemini check
+       └───────────────────────┬───────────────┘
+                               │
+       ┌───────────────────────▼───────────────┐
+       │           FINALIZER PHASE             │
+       │        (no modules registered)        │
+       └───────────────────────┬───────────────┘
+                               │ ctx.final_output or ctx.response_text
+  OUTPUT
+  ─────────────────────────────────────────────
+  JSON body             WS binary audio frames
+  SSE token stream      (TTS synthesis in transport)
+```
 
 ---
 
@@ -53,540 +142,505 @@ Channel → Transporter → Classifier → Enricher → Processor → Responder 
 
 ```
 p-lanes/
-├── main.py                              # Microkernel entry (~4 lines)
-├── config.py                            # Core-only config (pipeline, channels, security floors, slots)
+├── main.py                          # Kernel: lifespan, handle_message, handle_stream
+├── config.py                        # Single source of truth — reads config.yaml + users.yaml
+├── config.yaml                      # System config: slots, LLM, sampling, modules, security
+├── users.yaml                       # Per-user slot + security assignments (gitignored)
 │
 ├── core/
-│   ├── llm.py                           # llama.cpp lifecycle, call_slot(), token tracking
-│   ├── slots.py                         # User objects, slot locks, flags
-│   ├── transport.py                     # FastAPI server, channel routing, transcript SSE
-│   ├── context.py                       # Context dataclass — the pipeline's API surface
-│   ├── registry.py                      # Module auto-discovery + @register decorator
-│   ├── config_loader.py                 # load_addon_config() for modules and providers
-│   ├── responder.py                     # Built-in LLM response (registered to "responder" stage)
-│   ├── summarizer.py                    # Context compression, KV wipe/reinject
-│   ├── providers/
-│   │   ├── base.py                      # InputProvider, OutputProvider, Attachment, ProcessedInput
-│   │   ├── input/
-│   │   │   ├── stt_device_map/          # STT + static device-to-user mapping
-│   │   │   ├── stt_voiceprint/          # STT + parallel speaker identification
-│   │   │   ├── multimodal/              # Text + audio + images
-│   │   │   └── text_only/               # JSON text input (chat/dev)
-│   │   └── output/
-│   │       ├── kokoro_tts/              # Kokoro TTS (default)
-│   │       ├── piper_tts/               # Piper TTS (alternative)
-│   │       └── text_only/               # Text passthrough (chat/dev)
-│   └── tools/
-│       ├── tool_runner.py               # Parses "lanes ..." commands
-│       ├── base.py                      # BaseTool interface
-│       └── builtins/                    # Built-in admin tools
+│   ├── llm.py                       # llama.cpp process lifecycle, call(), call_stream(), call_internal()
+│   ├── slots.py                     # User dataclass, slot locks, profile I/O, shutdown save
+│   ├── transport.py                 # FastAPI routes, Gate 1, WS voice, SSE broadcast endpoint
+│   ├── pipeline.py                  # PipelineContext dataclass — the pipeline's data contract
+│   ├── events.py                    # @register decorator, 4-phase registry, module auto-discovery
+│   ├── envelope.py                  # MessageEnvelope input contract, Source enum
+│   ├── summarizer.py                # Context compression — async (utility) and in-place modes
+│   ├── scheduler.py                 # @schedule decorator, background cron job runner
+│   ├── broadcast.py                 # SSE event broadcast for token stream listeners
+│   ├── gates.py                     # Summarization gate state (prevents double-fire)
+│   ├── gemini.py                    # Gemini Flash external inference backend + rate limiter
+│   ├── secrets.py                   # !secret tag support, get_secret()
+│   └── log.py                       # Structured logging (structlog)
 │
 ├── service/
-│   └── dispatcher.py                    # Pipeline executor, Gate 2 + Gate 3 enforcement
+│   └── service.py                   # Phase runner: Gate 2 enforcement, priority sort, dispatch
 │
-├── modules/                             # Drop-in module folders (auto-discovered)
-│   ├── intent_classifier/               # Semantic intent routing
-│   ├── rag/                             # Retrieval augmented generation
-│   ├── rag_processor/                   # RAG data compression via utility slot
-│   ├── ha_bridge/                       # Home Assistant device control
-│   └── config_manager/                  # Admin config changes via chat
+├── modules/                         # Single .py files — self-register via @register on import
+│   ├── semantic_router.py           # classifier · embedding-based intent classification
+│   ├── hello_world.py               # classifier · greeting detection + early response
+│   ├── flag_reply.py                # classifier · "flag that" → writes flagged response files
+│   ├── weather_query.py             # classifier · outside weather via HA
+│   ├── timer.py                     # classifier · timer/alarm intent handler
+│   ├── entity_enricher.py           # enricher   · resolves device names → HA entity list
+│   ├── device_control.py            # enricher   · validates + executes HA device commands
+│   ├── ha_query.py                  # enricher   · reads HA sensor state into enrichments
+│   ├── rag_enricher.py              # enricher   · ChromaDB semantic search → context injection
+│   ├── web_search.py                # enricher   · SearXNG + optional Jina Reader
+│   ├── response_verifier.py         # responder  · background Gemini hallucination check
+│   └── crawler.py                   # scheduled  · nightly Jina web crawl (not a pipeline module)
 │
-└── users/{user_id}/                     # Per-user runtime data
-    ├── profile.json                     # Persona, security level, slot assignment
-    ├── summary.txt                      # Rolling conversation summary
-    └── history.db                       # SQLite conversation log
+└── providers/                       # Service providers — autodiscovered from subdirectories
+    ├── base.py                      # Abstract bases: Provider, STTProvider, TTSProvider, EmbeddingProvider
+    ├── whisper/                     # STTProvider — remote Whisper transcription
+    ├── kokoro/                      # TTSProvider — remote Kokoro TTS
+    ├── embeddings/                  # EmbeddingProvider — local BGE-M3 sentence embeddings
+    ├── homeassistant/               # HA REST API client
+    ├── rag/                         # ChromaDB persistent store + file ingestor
+    └── sqlite/                      # aiosqlite persistent DB at /var/lib/p-lanes/db/p-lanes.db
 ```
 
-Each module folder contains:
-```
-modules/{name}/
-├── module.yaml      # Manifest: name, enabled, stage, intents, security_level
-├── config.yaml      # Module-specific settings (optional)
-├── __init__.py      # Exposes handle()
-└── {name}.py        # Runtime logic
-```
+**User data** (per-user, at `/var/lib/p-lanes/users/{user_id}/`):
+- `profile.json` — persona, voice_id, rag_scope, area; written on shutdown
+- `summary.txt` — rolling conversation summary; written after each summarization
 
-Each provider folder contains:
-```
-core/providers/{capability}/{name}/
-├── provider.yaml    # Manifest: name, capability, description
-├── config.yaml      # Provider-specific settings (optional)
-└── provider.py      # Implementation + singleton
-```
+Conversation history is held in memory on the User object and is not persisted to disk between restarts (intentional — slot context is always rebuilt from summary + recent injected turns).
 
 ---
 
 ## Pipeline
 
-Every request flows through five stages in order. Modules register to stages and declare which intents they handle. The dispatcher filters by intent, checks security, and runs matching modules.
+Every request flows through four registered phases. The LLM call happens between the enricher and responder phases and is handled directly by the kernel — it is not a registered phase and modules do not call it.
+
+### Registered Phases
 
 ```python
-PIPELINE = ["classifier", "enricher", "processor", "responder", "finalizer"]
+# core/events.py
+PHASES = ("classifier", "enricher", "responder", "finalizer")
 ```
 
-| Stage | Purpose | Example Modules |
+| Phase | Handled by | Purpose |
 |---|---|---|
-| `classifier` | Classify intent, set `ctx.intent` | intent_classifier |
-| `enricher` | Gather data, inject context | rag |
-| `processor` | Transform data, execute actions | rag_processor, ha_bridge, system_tools |
-| `responder` | Generate LLM response | llm_respond (built-in) |
-| `finalizer` | Post-response validation/overrides | config_manager |
+| `classifier` | service.py → modules | Classify intent, set `ctx.intent`, optionally abort or short-circuit |
+| `enricher` | service.py → modules | Gather context into `ctx.enrichments` and `ctx.metadata` |
+| `[LLM]` | main.py kernel | Build prompt, call llama.cpp slot, set `ctx.response_text` |
+| `responder` | service.py → modules | Post-response side effects (background verification, etc.) |
+| `finalizer` | service.py → modules | Final output overrides (no modules currently registered) |
 
-**Intent-based activation matrix:**
+### Module Execution Order
 
-```
-                  classifier  enricher  processor  responder  finalizer
-                  ─────────   ────────  ─────────  ─────────  ─────────
-general_chat      intent_cls     —          —       llm_resp      —
-device_control    intent_cls    rag     ha_bridge   llm_resp*     —
-health_query      intent_cls    rag     rag_proc    llm_resp      —
-knowledge_query   intent_cls    rag     rag_proc    llm_resp      —
-vision_query      intent_cls     —          —       llm_resp      —
-config_change     intent_cls     —          —       llm_resp   config_mgr
-system_tool       intent_cls     —      sys_tools   llm_resp*     —
+Within each phase, `service.py` runs modules in priority order (`MODULE_PRIORITIES` in config.yaml, default 50). Ties broken alphabetically. Gate 2 silently skips modules the user lacks permission for.
 
-  * = llm_respond runs but skips (ctx.final_text already set)
-  — = no module registered for this intent at this stage (zero cost)
-```
+### Skip Processor
 
-The LLM is not special — it's a built-in module registered to `responder`. Any module can call the LLM on any slot at any stage via `ctx.call_slot()`.
+A module that fully handles a request (e.g. `device_control`) sets `ctx.skip_processor = True` and writes to `ctx.response_text`. The kernel sees this and skips the LLM call. The exchange is still injected into conversation history.
 
----
+### Intent Routing
 
-## Channels
+`semantic_router` uses BGE-M3 embeddings. On first request it builds centroid vectors from example phrases in `modules/intents.yaml`. Subsequent requests embed the message and find the closest bucket via cosine similarity.
 
-Channels are named I/O endpoints. Each pairs an input provider with an output provider. All channels share the same pipeline, security gates, user slots, and conversation history.
+- Below `confidence_threshold` (0.55) → no intent candidate
+- Above threshold but below `confidence_required` (0.65 global, per-intent overrides exist) → intent not set
+- Above `confidence_required` → `ctx.intent` set, per-intent `temperature_override` applied
 
-```python
-# config.py
-CHANNELS = {
-    "voice":  {"input": "stt_voiceprint", "output": "kokoro_tts"},
-    "chat":   {"input": "text_only",      "output": "text_only"},
-    # "vision": {"input": "multimodal",   "output": "text_only"},
-}
-```
+Intent buckets: `device_control`, `ha_sensor`, `outside_weather`, `media_control`, `timer_alarm`, `calendar`, `web_search`, `local_search`, `general`.
 
-**Key behaviors:**
-- Each channel gets a `/channel/{name}` endpoint
-- Same user, same slot, any channel — voice and chat share one conversation
-- Response follows the request channel (voice → audio, chat → text)
-- Adding a channel = one config entry + restart
-
-### Transcript Stream (Optional)
-
-An SSE endpoint mirrors both sides of a conversation in real time across all channels.
-
-```python
-ENABLE_TRANSCRIPT_SSE = True   # config.py
-```
-
-- **Endpoint:** `/transcript/{user_id}`
-- **Events:** role, text, source channel, timestamp
-- **Use case:** HAOS dashboard card showing voice conversations as text
-- Read-only — never alters the pipeline
-- Gated: ADMIN watches any user, USER watches own only
-
-### Cross-Channel Example
-
-```
-TIME   CHANNEL   CONTENT                                        SLOT TOKENS
-─────  ───────   ─────────────────────────────────────────────  ──────────
-19:30  voice     "What should I make for dinner?"                    1,204
-19:30  voice     ← "How about pasta carbonara?"
-19:32  chat      "What ingredients do I need?"                       1,847
-19:32  chat      ← "Spaghetti, eggs, parmesan, pancetta..."
-19:45  voice     "Set a timer for 12 minutes"                        2,103
-19:45  voice     ← "Timer set."
-19:50  vision    "What does this say?" [photo of wine label]         2,891
-19:50  vision    ← "That's a 2019 Chianti. Great with carbonara."
-
-All on slot 0. Transcript SSE shows the full timeline.
-```
+`web_search` (direct internet queries) → web_search module runs.
+`local_search` (lookup queries) → rag_enricher runs first; if it finds a hit, web_search skips. If RAG is empty, web_search fires as fallback.
 
 ---
 
 ## Security Model
 
-Three hard gates. The LLM never makes security decisions. Each gate can only raise the bar, never lower it.
+Two hard gates. The LLM never makes security decisions.
 
 ```
-Gate 1 — Identity          Gate 2 — Stage Floor         Gate 3 — Module Permission
-(transporter)              (dispatcher)                 (dispatcher)
-WHO are you?               WHERE can you go?            CAN you use this?
-                           
-Reads: user profiles       Reads: config.py             Reads: module.yaml
-Unknown → dropped          STAGE_SECURITY floors        security_level field
-Known → enter pipeline     Below floor → skip stage     Below level → skip module
+Gate 1 — Identity                  Gate 2 — Module Permission
+(core/transport.py)                (service/service.py)
+
+WHO are you?                       CAN you use this module?
+
+Reads: users.yaml (via config.py)  Reads: MODULE_PERMISSIONS in config.yaml
+Unknown user_id → 403              Below required level → silently skipped
+Known → pipeline continues         Cleared → module.handle(ctx) called
 ```
+
+Unknown user IDs are mapped to the `guest` slot (if guest is enabled) before Gate 1 evaluates — so truly unknown IDs that don't resolve to guest are rejected.
+
+### Security Levels
 
 ```python
-# config.py — only the system owner can change these
-STAGE_SECURITY = {
-    "classifier": SecurityLevel.GUEST,      # Everyone
-    "enricher":   SecurityLevel.USER,       # No enrichment for guests
-    "processor":  SecurityLevel.USER,       # No processing for guests
-    "responder":  SecurityLevel.GUEST,      # Everyone gets a response
-    "finalizer":  SecurityLevel.TRUSTED,    # Post-processing for trusted+
-}
+# config.py
+class SecurityLevel:
+    GUEST   = 0
+    USER    = 1
+    POWER   = 2
+    TRUSTED = 3
+    ADMIN   = 4
 ```
 
-**Access by security level:**
+Security level is loaded from `users.yaml` at startup and is **never** read from `profile.json`. This prevents level escalation via user-writable profile files.
 
-| Level | Stages | Notes |
-|---|---|---|
-| GUEST (0) | classifier → responder | Basic LLM chat only |
-| USER (1) | classifier → enricher → processor → responder | Full pipeline minus finalizer |
-| TRUSTED (2) | All stages | Modules up to level 2 |
-| ADMIN (3) | All stages, all modules | Everything including config changes |
+### Device Domain Permissions
 
-**Why three gates?** Gate 2 prevents a drop-in module from bypassing stage restrictions. A module declaring `security_level: 0` is meaningless if its stage has a floor of 1. Gate 2 is always evaluated first.
-
----
-
-## Providers
-
-Providers handle I/O outside the pipeline — before input enters and after output leaves. Each is a self-contained folder with a manifest and optional config.
-
-### Base Interfaces
-
-```python
-class InputProvider:
-    name: str
-    async def process(self, raw_request: dict) -> ProcessedInput: ...
-    async def startup(self) -> None: ...
-    async def shutdown(self) -> None: ...
-    def register_routes(self, app: FastAPI) -> None: ...   # Optional custom endpoints
-
-class OutputProvider:
-    name: str
-    async def process(self, text: str, user: User) -> OutputResult: ...
-    async def startup(self) -> None: ...
-    async def shutdown(self) -> None: ...
-    def register_routes(self, app: FastAPI) -> None: ...   # Optional custom endpoints
-```
-
-### Provider Config
-
-Each provider reads its own `config.yaml` — core config is never touched:
+A separate cumulative permission layer inside `device_control.py`. Level N grants all domains listed at levels ≤ N.
 
 ```yaml
-# core/providers/input/stt_voiceprint/config.yaml
-stt_url: "http://localhost:8080"
-voiceprint_url: "http://localhost:8081"
-voiceprint_threshold: 0.82
+# config.yaml
+device_domain_permissions:
+  1: ["light", "switch", "fan", "input_boolean"]
+  2: ["climate", "cover"]
+  3: ["lock"]
 ```
 
-```python
-from core.config_loader import load_addon_config
-cfg = load_addon_config(__file__)   # Finds config.yaml next to this file
-```
-
-### Custom Routes
-
-Providers can register additional endpoints for non-standard integrations:
-
-```python
-class SensorBridge(InputProvider):
-    def register_routes(self, app: FastAPI):
-        @app.post("/sensor")
-        async def receive_sensor(data: dict):
-            self.latest_readings[data["sensor_id"]] = data
-            return {"status": "ok"}
-```
-
-The transporter calls `register_routes(app)` on all active providers at startup.
-
-### Modules vs. Providers
-
-| | Modules | Providers |
-|---|---|---|
-| Location | `modules/` | `core/providers/{capability}/{name}/` |
-| When | During pipeline stages | Before/after the pipeline |
-| Discovery | `module.yaml` manifest | `provider.yaml` manifest |
-| Hot-reload | Yes (`lanes reload`) | No (restart required) |
-| Custom routes | No | Optional |
-
----
-
-## Modules
-
-Modules are drop-in pipeline components. Drop a folder in `modules/`, restart (or `lanes reload`), done.
-
-### Manifest
-
-```yaml
-# modules/intent_classifier/module.yaml
-name: intent_classifier
-enabled: true
-stage: classifier
-intents: ["*"]
-security_level: 0
-description: "Semantic intent classification"
-```
-
-### Interface
-
-```python
-from core.registry import register
-
-@register("intent_classifier", stage="classifier", intents=["*"])
-async def handle(ctx: Context) -> Context:
-    # classify and set ctx.intent
-    return ctx
-```
-
-### Module Rules
-
-1. Never import from other modules, `service/`, or `core/llm.py`
-2. Access LLM via `ctx.call_slot()` and `ctx.call_utility()` only
-3. Never check permissions — the dispatcher handles it
-4. Never write to `config.py` — use own `config.yaml`
-5. Always return `ctx`, even if unchanged
-6. All IO must be async
-7. May read `ctx.attachments` but must not assume they exist
+Users below level 1 (GUEST) cannot control any devices regardless of module permission.
 
 ---
 
 ## Context Object
 
-The single data object flowing through the pipeline. Every module reads from it, writes to it, and returns it.
+`PipelineContext` is the single data object flowing through every phase. Modules read from it, write to it, and return it.
 
 ```python
+# core/pipeline.py
 @dataclass
-class Context:
-    user: User                                    # Who is this
-    message: str                                  # What they said
-    intent: str | None = None                     # Set by classifier
-    attachments: list[Attachment] = []             # Images, docs from multimodal input
-    metadata: dict = {}                            # Module communication
-    prompt_extras: list[str] = []                  # Enrichment data for the LLM prompt
-    response: LLMResponse | None = None            # Raw LLM response
-    final_text: str | None = None                  # Final output text
+class PipelineContext:
+    # --- input (set at construction) ---
+    user:      User              # resolved User object (slot, security, history, locks)
+    envelope:  MessageEnvelope   # full normalized input contract
 
-    async def call_slot(slot, system, content)     # Call a specific LLM slot
-    async def call_utility(system, content)        # Use utility slot (or fallback to user slot)
+    # --- classifier output ---
+    intent:       str       = ""    # set by semantic_router
+    tags:         list[str] = []
+    requires_llm: bool      = True
+
+    # --- enricher output ---
+    enrichments: list[dict] = []
+    # each entry: {"source": "...", "content": "..."}
+    # assembled into the LLM prompt by build_enriched_prompt()
+
+    # --- inter-module structured data ---
+    metadata: dict = {}
+    # keyed by convention: metadata["resolved_entities"], etc.
+
+    # --- kernel output ---
+    response_text: str   = ""
+    total_tokens:  int   = 0
+    truncated:     bool  = False
+    elapsed:       float = 0.0
+
+    # --- finalizer output ---
+    final_output: str = ""      # what actually gets sent to the channel
+
+    # --- control flags ---
+    aborted:        bool = False
+    abort_reason:   str  = ""
+    skip_processor: bool = False   # set True to bypass LLM call
+
+    # --- sampling override ---
+    temperature_override: float | None = None   # set by semantic_router per intent
 ```
 
-**LLM access tiers:**
+**Convenience properties** on ctx (delegate to envelope): `raw_message`, `source`, `device_id`, `language`, `stt_confidence`, `voice_confidence`, `attachments`, `conversation_id`, `message_id`.
 
-| Method | Use Case |
-|---|---|
-| `ctx.call_slot(N, system, content)` | Explicit slot targeting |
-| `ctx.call_utility(system, content)` | Data processing — utility slot with graceful fallback |
-| `ctx.call_slot(ctx.user.slot, ...)` | User-facing response (what `llm_respond` does) |
+**Prompt builder:** `ctx.build_enriched_prompt()` assembles all `ctx.enrichments` into labeled blocks, then appends the raw user message. If `enrichments` is empty, returns the raw message unchanged.
 
-When no utility slot is available (`UTILITY_SLOT = None`), `call_utility()` falls back to the user slot automatically. The `utility_fallback` flag tells the summarizer to compress more aggressively on the next cycle.
+---
+
+## Providers
+
+Providers handle services the pipeline depends on. They are not pipeline stages — they start at boot and are available globally via the `providers` registry.
+
+### Base Types
+
+```python
+# providers/base.py
+class Provider(ABC):           # start(), stop(), is_ready
+class STTProvider(Provider):   # transcribe(audio, sample_rate) → TranscribeResult
+class TTSProvider(Provider):   # synthesize(text) → bytes
+                               # synthesize_stream(text) → AsyncIterator[bytes]
+class EmbeddingProvider(Provider):  # embed(texts), embed_async(texts)
+```
+
+`TranscribeResult` carries `text`, `vad` (bool — False means no speech detected), `language`, and `stt_confidence`.
+
+### Installed Providers
+
+| Provider | Type | Role |
+|---|---|---|
+| `whisper` | STTProvider | Remote Whisper speech-to-text |
+| `kokoro` | TTSProvider | Remote Kokoro text-to-speech |
+| `embeddings` | EmbeddingProvider | Local BGE-M3 sentence embeddings |
+| `homeassistant` | Provider | HA REST API — state reads and service calls |
+| `rag` | Provider | ChromaDB vector store + file ingestor |
+| `sqlite` | Provider | aiosqlite persistent DB with versioned migrations |
+
+### SQLite Provider
+
+Single shared database at `/var/lib/p-lanes/db/p-lanes.db`. WAL mode, foreign keys on per connection.
+
+**Tables:** `garmin_metrics`, `weight_log`, `plants`, `plant_checkins`, `transactions`, `component_inventory`, `weather_history`, `workouts`.
+
+Schema version tracked in `_meta` table (`key=schema_version`). Migrations are an append-only list in `provider.py → _MIGRATIONS` — never edit existing entries.
+
+```python
+db = providers.get_db()
+row     = await db.fetchone("SELECT * FROM weight_log WHERE id = ?", (id,))
+rows    = await db.fetchall("SELECT * FROM weight_log ORDER BY date DESC")
+last_id = await db.execute("INSERT INTO weight_log (date, kg) VALUES (?,?)", (date, kg))
+```
+
+### RAG Provider
+
+ChromaDB at `/var/lib/p-lanes/chroma/`. Data files at `/var/lib/p-lanes/rag/`.
+
+**Collections:** one per shared topic (`shared_home`, `shared_cooking`, `shared_electronics`, `shared_games`, `shared_general`) plus one private collection per named user (`user_{user_id}`). All use cosine similarity (HNSW). Embeddings provided by the `embeddings` provider.
+
+Ingest state tracked by file mtime at `/var/lib/p-lanes/chroma/ingest_state.json`. The ingestor is header-aware (splits markdown on `##` headers). Trigger re-ingest: `POST /admin/rag/ingest`.
+
+### Provider Discovery
+
+At startup, `providers.autodiscover()` scans all subdirectories under `providers/` and imports each `provider.py`. Providers register themselves on import. Core never imports a provider by name.
+
+---
+
+## Modules
+
+Modules are the only place where feature logic lives. Each module is a single `.py` file that self-registers at import time via `@register`.
+
+### Registration
+
+```python
+from core.events import register
+from core.pipeline import PipelineContext
+
+@register("module_name", phase="classifier")
+async def handle(ctx: PipelineContext) -> PipelineContext:
+    ...
+    return ctx
+```
+
+All modules are imported automatically when `import modules` runs at startup. No manifest files. No manual registration.
+
+### Valid Phases
+
+```python
+PHASES = ("classifier", "enricher", "responder", "finalizer")
+```
+
+### Scheduled Modules
+
+A module running on a cron schedule (not in the pipeline) uses `@schedule` from `core/scheduler.py`. The crawler is the only current example.
+
+```python
+from core.scheduler import schedule
+
+@schedule(cron="0 23 * * *", requires_idle=True, max_duration=3600)
+async def crawl():
+    ...
+```
+
+Scheduled modules are discovered and started separately from pipeline modules.
+
+### Module Rules
+
+1. Register to exactly one phase via `@register`. Return `ctx` even if unchanged.
+2. Never import from other modules. Use `ctx.metadata` for structured handoffs between modules in the same phase.
+3. Write text context for the LLM into `ctx.enrichments`. Never build the LLM prompt manually.
+4. To skip the LLM: set `ctx.skip_processor = True` and write `ctx.response_text`.
+5. To abort the pipeline: set `ctx.aborted = True` and `ctx.abort_reason`.
+6. Never check your own permissions — Gate 2 in the dispatcher handles it.
+7. All I/O must be async. Never block the event loop.
+8. For enricher modules: check `ctx.intent` at the top and return early if the intent isn't yours.
+9. Module config lives in its own YAML file. Never touch `config.py`.
+10. Direct `llm.call_internal()` use is permitted only for modules that need a clean utility-slot LLM call (e.g. device_control parsing a command into structured JSON). It must never write to user conversation history.
 
 ---
 
 ## Core Components
 
+### Kernel (main.py)
+
+The kernel owns the LLM call. It is not a module and cannot be swapped out.
+
+```
+handle_message / handle_stream:
+  1. Resolve user from envelope.user_id (Gate 1 happened in transport)
+  2. Build PipelineContext
+  3. run_pre_processor → classifier phase + enricher phase
+  4. If slot lock held: wait up to SUMMARIZE_LOCK_WAIT seconds
+  5. If not skip_processor:
+       call llm.call() or llm.call_stream()
+       On LLMContextOverflow: emergency_summarize → retry once
+  6. If skip_processor and response_text set: inject exchange into history
+  7. run_post_processor → responder phase + finalizer phase
+  8. Return ctx.final_output or ctx.response_text
+  9. Broadcast to SSE listeners (no-op if broadcast disabled)
+```
+
 ### Slot Architecture
 
 ```
 ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│ SLOT 0   │ │ SLOT 1   │ │ SLOT 2   │ │ SLOT 3   │ │ SLOT 4   │
-│ user_a   │ │ user_b   │ │ user_c   │ │ guest    │ │ utility  │
-│ ADMIN    │ │ TRUSTED  │ │ USER     │ │ GUEST    │ │ EPHEMERAL│
-│ persist  │ │ persist  │ │ persist  │ │ persist  │ │ wipe each│
+│  SLOT 0  │ │  SLOT 1  │ │  SLOT 2  │ │  SLOT 3  │ │  SLOT 4  │
+│  ADMIN   │ │ TRUSTED  │ │   USER   │ │  GUEST   │ │ UTILITY  │
+│ persist  │ │ persist  │ │ persist  │ │ persist  │ │ ephemeral│
 │ Lock()   │ │ Lock()   │ │ Lock()   │ │ Lock()   │ │ Lock()   │
 └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
-  any channel  any channel  any channel  fallback    call_utility()
+ voice+chat   voice+chat   voice+chat   fallback     summarizer
+                                                     + verifier
 ```
 
-- All channels for a user hit the same slot — voice and chat share history
-- Each slot has an `asyncio.Lock()` that serializes concurrent requests
-- Ephemeral slots wipe KV cache after every call (prevents data leakage)
-- `UTILITY_SLOT = None` disables the utility slot (modules fall back automatically)
+- Each slot has an `asyncio.Lock()` serializing concurrent requests.
+- All channels for a given user hit the same slot — voice and chat share history.
+- The guest slot is shared by any unrecognized user (if guest is enabled).
+- The utility slot runs background LLM calls (summarization, device command parsing, PII checks) without touching user conversation history. Its KV state is not preserved between calls.
 
 ### Summarizer
 
-Compresses conversation context when slots fill up:
+Compresses conversation history when slots fill up. Two modes depending on whether the utility lane is enabled:
 
-- **`flag_crit`** (truncated or tokens > `THRESHOLD_CRIT`): immediate background summarization
-- **`flag_big`** (tokens > `THRESHOLD_WARN`) + idle: summarize on next cycle
-- **Process:** acquire slot lock → generate summary → wipe KV → reinject system prompt + persona + summary + recent history → release lock
-- **Lock contention:** if a message arrives during summarization → "Give me just a second..." → wait up to 6s → drop if still locked
+**Async mode** (utility lane on — default):
+- Snapshot history at index N; fire summarization on utility slot without locking
+- User keeps talking while summarization runs
+- On completion: merge new summary + recent messages from snapshot + any messages that arrived during summarization
+- Summarization gate stays closed until the next clean LLM response confirms the slot state is fresh
+
+**In-place mode** (utility lane disabled):
+- Acquire slot lock → run summarization on user's own slot → apply → release
+- User receives "Give me just a second..." if lock is held longer than SUMMARIZE_LOCK_WAIT
+
+**Triggers:**
+- `flag_warn` (tokens > 70% of slot): summarize on next idle cycle
+- `flag_crit` (tokens > 80% of slot): immediate background task on every response
+- `LLMContextOverflow`: emergency in-place summarization, always, inline with the blocked request
+- Scheduled: daily (cron in config.yaml), runs all non-guest slots; optionally restarts llama-server after
+
+**Token budgets** (at 8,192 tokens/slot):
+- System header carve-out: 128 tokens
+- Summary cap: 10% of remaining ≈ 806 tokens
+- Recent history kept: 15% of remaining ≈ 1,210 tokens
+
+**Fallback:** if the LLM call fails during summarization, `_emergency_trim()` keeps only recent messages within budget, preserves existing summary, clears flags. Partial memory beats a broken slot.
+
+**Guest slots** are never summarized — history is wiped on idle instead.
 
 ### Transporter (core/transport.py)
 
-```python
-@app.post("/channel/{channel_name}")
-async def receive(channel_name: str, raw_request: dict):
-    channel = channels[channel_name]                        # Route to provider pair
-    processed = await channel["input"].process(raw_request) # Input provider
-    
-    # Gate 1 — identity check
-    user = slots.get_user(processed.user_id)
-    if not user: return {"error": "unauthorized"}
-    
-    # Transcript broadcast (if enabled)
-    # Pipeline execution
-    # Transcript broadcast (response)
-    
-    output = await channel["output"].process(response_text, user)  # Output provider
-    return output.to_response()
-```
+FastAPI server. Normalizes all input into `MessageEnvelope` before the pipeline.
 
-### Dispatcher (service/dispatcher.py)
+**Endpoints:**
 
-```python
-async def run(ctx: Context) -> Context:
-    for stage in config.PIPELINE:
-        # GATE 2 — stage security floor
-        if ctx.user.security_level < config.STAGE_SECURITY.get(stage, 0):
-            continue
-
-        for module in registry.get(stage, ctx.intent):
-            # GATE 3 — module permission
-            if ctx.user.security_level < module.security_level:
-                continue
-            ctx = await module.handle(ctx)
-
-    return ctx
-```
-
----
-
-## System Tools
-
-Admin introspection via the `lanes` prefix. Classified as `system_tool` intent, handled in the `processor` stage, short-circuits the responder.
-
-```
-lanes help                 Available tools (filtered by security level)
-lanes pipeline [intent]    Module execution order for an intent
-lanes slots                Slot state (user, tokens, flags, idle)
-lanes channels             Active channels and provider pairs
-lanes security             Stage floors + module permission levels
-lanes health               System health (GPU, slots, uptime, disk)
-lanes debug [on|off]       Toggle per-request pipeline trace
-lanes trace [last|N]       View trace from in-memory ring buffer
-lanes config               Read-only core config dump
-lanes summary [user]       Current conversation summary
-lanes history [user] [N]   Last N conversation turns
-lanes wipe [user|slot]     Force-wipe KV cache (confirmation required)
-lanes reload               Hot-reload module registry
-lanes test [module]        Run module self-test
-```
-
----
-
-## Data Flow
-
-### Request Lifecycle
-
-```
-Client ─── POST /channel/{name} ───► Transporter
-                                         │
-                                    Input Provider
-                                    (STT, voiceprint, text, multimodal)
-                                         │
-                                    ┌─ GATE 1 ─┐
-                                    │ Identity  │
-                                    └─────┬─────┘
-                                         │
-                                      main.py
-                                    (build Context)
-                                         │
-                              ┌──── Dispatcher ────┐
-                              │                    │
-                              │  ┌─ GATE 2 ──────┐ │
-                              │  │ Stage floor    │ │
-                              │  └───────┬────────┘ │
-                              │          │          │
-                              │  ┌─ GATE 3 ──────┐ │
-                              │  │ Module perm    │ │
-                              │  └───────┬────────┘ │
-                              │          │          │
-                              │   module.handle()   │
-                              │     (per stage)     │
-                              └──────────┬──────────┘
-                                         │
-                                   Output Provider
-                                   (TTS or text)
-                                         │
-Client ◄──────────── response ───────────┘
-```
-
-### Voice Chat — "Tell me a joke"
-
-```
-/channel/voice → stt_voiceprint → user=dad
-  Gate 1: ✓
-  classifier → intent = "general_chat"
-  responder  → llm_respond → slot 0 → joke
-/channel/voice ← TTS provider → audio → speaker
-```
-
-### Device Control — "Turn on the kitchen lights"
-
-```
-/channel/voice → stt_voiceprint → user=dad
-  Gate 1: ✓
-  classifier → intent = "device_control"
-  processor  → ha_bridge → HA API call → ctx.final_text = "Lights on."
-  responder  → final_text set, LLM skipped
-/channel/voice ← TTS provider → "Lights on."
-```
-
-### RAG Health Query
-
-```
-/channel/voice → stt_voiceprint → user=dad
-  classifier → intent = "health_query"
-  enricher   → rag → ctx.prompt_extras = [47 weight entries]
-  processor  → rag_processor → call_utility() → compressed summary
-  responder  → llm_respond → slot 0 → "You're down 13 pounds."
-/channel/voice ← TTS provider → audio
-```
-
-### Vision Query (future)
-
-```
-/channel/vision → multimodal → user=dad + [image attachment]
-  classifier → intent = "vision_query"
-  responder  → llm_respond → build_content() → multimodal blocks → Qwen3-VL
-/channel/vision ← text_only → JSON response
-```
-
----
-
-## Extensibility
-
-| Layer | Install | Restart? | Uninstall |
+| Method | Path | Auth | Purpose |
 |---|---|---|---|
-| Module | Drop folder in `modules/` | No (`lanes reload`) | Delete folder |
-| Provider | Drop folder in `core/providers/` | Yes | Delete folder |
-| Channel | Add entry to `config.py` CHANNELS | Yes | Remove entry |
-| Stage | Add to `config.py` PIPELINE | Yes | Remove entry |
-| System tool | Drop file in `core/tools/builtins/` | Yes | Delete file |
+| POST | `/channel/chat` | Gate 1 | Blocking text in, JSON out |
+| POST | `/channel/chat/stream` | Gate 1 | Text in, SSE token stream out |
+| WS | `/channel/voice` | Gate 1 (query param) | PCM audio in, WAV audio out (sentence-buffered) |
+| GET | `/channel/listen/{user_id}` | Gate 1 (query param) | SSE broadcast — own stream only |
+| GET | `/health` | none | LLM status, provider list, version |
+| GET | `/slots` | none | All slot states (flags, idle, history length) |
+| POST | `/llm/restart` | ADMIN | Restart llama-server process |
+| GET | `/admin/dump` | ADMIN | Full prompt dump for all users |
+| GET | `/admin/dump/{user_id}` | ADMIN | Full prompt dump for one user |
+| POST | `/admin/entity-index/refresh` | ADMIN | Clear entity index, rebuild on next request |
+| POST | `/admin/rag/ingest` | ADMIN | Trigger background RAG re-ingest |
 
-| Feature | How | Core Changes |
-|---|---|---|
-| New TTS/STT engine | Drop provider folder | None |
-| New chat interface | Add channel config entry | None |
-| Vision/multimodal | Add multimodal provider + channel | None |
-| RAG pipeline | Drop module in `modules/` | None |
-| Device control | Drop module in `modules/` | None |
-| Sensor endpoint | Provider with `register_routes()` | None |
-| Live transcript | Set `ENABLE_TRANSCRIPT_SSE = True` | None |
-| New admin command | Drop file in `core/tools/builtins/` | None |
+**Voice WebSocket protocol:**
+- Client → server: binary frames (WAV audio, 16kHz mono)
+- Server → client: binary frames (WAV audio, 24kHz mono), JSON control events
+- Control events: `ready`, `transcript`, `silence`, `text` (TTS fallback), `done`, `error`
+- Client ping → server pong
+- Response is sentence-buffered: TTS runs per sentence as LLM streams, reducing first-audio latency
+
+**Broadcast listener** (`/channel/listen/{user_id}`): SSE stream of token and done events. Same-user only — users can only subscribe to their own stream.
+
+### MessageEnvelope (core/envelope.py)
+
+The normalized input contract. All channels produce one before the pipeline.
+
+```python
+@dataclass
+class MessageEnvelope:
+    user_id:          str | None     # None = unidentified; slots.get_user maps to guest
+    source:           Source         # TEXT | VOICE | API | HA
+    text:             str | None     # None if purely attachment-based
+
+    message_id:       str            # auto-generated UUID
+    timestamp:        datetime       # auto-generated UTC
+
+    conversation_id:  str | None = None
+    device_id:        str | None = None   # return address for output routing
+    language:         str | None = None   # STT-detected language code
+    stt_confidence:   float | None = None
+    voice_confidence: float | None = None
+    attachments:      list[Attachment] | None = None
+```
+
+---
+
+## Data Flow Examples
+
+### Voice Control — "Turn on the kitchen lights"
+
+```
+WS /channel/voice
+  → audio bytes → Whisper STT → "turn on the kitchen lights"
+  → MessageEnvelope(source=VOICE)
+  → Gate 1: known user ✓
+  → classifier:
+      semantic_router → intent = "device_control"
+  → enricher:
+      entity_enricher [10] → resolves "kitchen lights" → metadata["resolved_entities"]
+      device_control  [20] → domain check ✓, call_internal() parses command,
+                             HA API called → skip_processor=True, response_text="Done."
+      rag_enricher    [30] → intent not in RAG_INTENTS → skip
+      web_search      [50] → intent not "web_search"/"local_search" → skip
+      ha_query        [50] → intent not "ha_sensor" → skip
+  → kernel: skip_processor=True → LLM skipped
+  → responder:
+      response_verifier → "device_control" not in verify_intents → skip
+  → transport: Kokoro TTS → audio → client
+```
+
+### Knowledge Query (RAG → local knowledge)
+
+```
+POST /channel/chat → "what's the SRAM spec for the ESP32-S3?"
+  → Gate 1: ✓
+  → classifier: intent = "local_search"
+  → enricher:
+      rag_enricher [30] → embeds query, searches shared_electronics → hit found
+                          ctx.enrichments += [{"source": "knowledge base...", "content": "..."}]
+      web_search   [50] → local_search intent, RAG hit detected → skipped
+  → kernel: build_enriched_prompt() → enrichment block + user message → llm.call()
+  → responder: response_verifier → "local_search" not in verify_intents → skip
+  → JSON response
+```
+
+### General Chat with Background Verification
+
+```
+POST /channel/chat → "what happened in the news today?"
+  → Gate 1: ✓
+  → classifier: intent = "web_search"
+  → enricher:
+      web_search [50] → SearXNG query → Jina fetch for thin snippets
+                        ctx.enrichments += [{"source": "web search results", "content": "..."}]
+  → kernel: llm.call() → response_text set
+  → responder:
+      response_verifier → intent "web_search"... check config verify_intents
+                          fires asyncio.create_task (non-blocking)
+                          → utility slot: PII check ("CLEAR"/"DIRTY")
+                          → if CLEAR: Gemini verify → flags file if hallucination detected
+  → response returned immediately (verifier runs in background)
+```
 
 ---
 
 ## Rules for Contributors
 
-1. **`main.py` never grows.** Logic belongs in core, service, or modules.
-2. **`core/` never imports from `modules/`.** The boundary is absolute.
-3. **Modules never import** from other modules, `service/`, or `core/llm.py`.
-4. **LLM access** is through `ctx.call_slot()` and `ctx.call_utility()` only.
-5. **Security is three gates only.** Modules never check their own permissions.
-6. **Config.py is core-only.** Addon settings live in their own `config.yaml`.
-7. **Whitelist validation only.** Never blacklist.
-8. **The LLM is never a security decision maker.**
-9. **All module IO must be async.** No blocking the event loop.
-10. **Ephemeral slots wipe after every call.** No exceptions.
-11. **Token tracking** uses `usage.total_tokens` from the latest response only. Never accumulate.
-12. **Context is the API.** Modules communicate through `ctx.metadata` and `ctx.prompt_extras`.
-13. **Gate 2 before Gate 3.** A module cannot lower the stage floor.
-14. **Drop-in discovery.** Manifests are scanned automatically. No manual registration.
+1. **`main.py` only grows for wiring.** Feature logic belongs in modules or core subsystems.
+2. **`core/` never imports from `modules/` or `providers/`.** Boundary is absolute.
+3. **Modules never import from other modules.** Use `ctx.metadata` for structured handoff.
+4. **Write context for the LLM into `ctx.enrichments`.** Never build the prompt manually.
+5. **To skip the LLM:** set `ctx.skip_processor = True` and write `ctx.response_text`.
+6. **`llm.call_internal()` is for clean utility-slot calls only** (e.g. parsing structured JSON). It must never inject into user conversation history.
+7. **Security is two gates only.** Modules never check their own permissions.
+8. **Core config (`config.py`) is read-only at runtime.** Addons use their own YAML files.
+9. **Whitelist validation only.** Never use a blacklist at security decision points.
+10. **The LLM is never a security decision maker.**
+11. **All module I/O must be async.** Never block the event loop.
+12. **Never use `systemctl restart` when editing profile files.** `shutdown_all()` writes profiles on stop — changes get overwritten. Always: stop → write → start.
+13. **Append-only migrations.** Never edit existing entries in `sqlite/provider.py → _MIGRATIONS`.
+14. **Security level is set by `users.yaml` only.** It is never read from `profile.json` — this is intentional to prevent escalation via user-writable files.
+15. **Drop-in discovery.** New module: add a `.py` file to `modules/`. New provider: add a subdirectory to `providers/`. No manual registration anywhere.
+16. **Module permissions default to USER (1)** if not listed in `MODULE_PERMISSIONS`. Explicitly set to GUEST (0) only when intentional.
