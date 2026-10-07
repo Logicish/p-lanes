@@ -39,15 +39,14 @@
 # Imports
 # ==================================================
 import json
+import re
 
 import structlog
 
 import providers
-from config import DEVICE_DOMAIN_PERMISSIONS, SecurityLevel
-from core.events import register
-from core.llm import call_internal
+from config import DEVICE_DOMAIN_PERMISSIONS, device_excluded
 from core.pipeline import PipelineContext
-from modules.entity_enricher import _normalize_query
+from core.tool_registry import tool
 
 log = structlog.get_logger()
 
@@ -98,27 +97,6 @@ _ACTION_LABELS: dict[str, str] = {
 }
 
 # ==================================================
-# Extraction Prompt
-# ==================================================
-
-_EXTRACT_SYSTEM = """\
-You are a Home Assistant command generator.
-Given resolved targets and a user command, output a single JSON action.
-
-Entity target:  {"domain": "light", "service": "turn_on", "entity_id": "light.x", "service_data": {}}
-Area target:    {"domain": "light", "service": "turn_on", "area_id": "master_bedroom", "service_data": {}}
-
-Rules:
-- Use area_id when the user refers to a room or multiple devices in a space
-- Use entity_id for a single specific device
-- service_data keys: brightness (0-255), color_name, temperature (number), hvac_mode, volume_level (0.0-1.0) — empty dict if none specified
-- "my", "mine", "my room" refer to the current user listed above
-- Output ONLY valid JSON. No explanation, no markdown, no code blocks.
-- If the action cannot be determined: {"error": "unclear"}\
-"""
-
-
-# ==================================================
 # Helpers
 # ==================================================
 
@@ -132,213 +110,192 @@ def _allowed_domains(security_level: int) -> set[str]:
     }
 
 
-def _format_resolved(resolved: list[dict], raw_message: str) -> str:
-    """Format resolved entity matches into an LLM-readable prompt block."""
-    lines = [f"Resolved targets for: {raw_message!r}"]
-    for i, m in enumerate(resolved, 1):
-        if m["type"] == "area":
-            entity_list = ", ".join(
-                f"{e['entity_id']} ({e['name']})"
-                for e in m.get("area_entities", [])
-            )
-            lines.append(
-                f"{i}. area: {m['area_name']} "
-                f"(area_id: {m['area_id']}, score: {m['score']:.2f})\n"
-                f"   entities: {entity_list or 'none'}"
-            )
-        else:
-            area_part = f", area: {m['area_name']}" if m.get("area_name") else ""
-            lines.append(
-                f"{i}. entity: {m['name']} "
-                f"(entity_id: {m['entity_id']}, domain: {m['domain']}"
-                f"{area_part}, score: {m['score']:.2f})"
-            )
-    return "\n".join(lines)
-
-
-# ==================================================
-# Validator
-# ==================================================
-
-def _validate(
-    action:         dict,
-    allowed:        set[str],
-    states:         list[dict],
-    known_area_ids: set[str],
-) -> str | None:
-    """Return an error string if invalid, None if safe to execute."""
-
-    if "error" in action:
-        return action["error"]
-
-    domain  = action.get("domain", "")
-    service = action.get("service", "")
-    eid     = action.get("entity_id", "")
-    area_id = action.get("area_id", "")
-
-    if not domain or not service:
-        return "missing domain or service"
-
-    # security: is this domain permitted for this user's level?
-    if domain not in allowed:
-        return f"domain '{domain}' not permitted at this security level"
-
-    # format: is this service in the whitelist?
-    if domain not in _ALLOWED or service not in _ALLOWED[domain]:
-        return f"service '{domain}.{service}' not in whitelist"
-
-    if not eid and not area_id:
-        return "no entity_id or area_id"
-
-    if eid:
-        known_entities = {s["entity_id"] for s in states}
-        if eid not in known_entities:
-            return f"entity_id '{eid}' not known"
-        if eid.split(".")[0] != domain:
-            return f"entity_id '{eid}' domain mismatch with '{domain}'"
-
-    if area_id:
-        if known_area_ids and area_id not in known_area_ids:
-            return f"area_id '{area_id}' not known"
-
-    sd = action.get("service_data") or {}
-    if "brightness" in sd:
-        b = int(sd["brightness"])
-        if not (0 <= b <= 255):
-            return f"brightness {b} out of range"
-    if "volume_level" in sd:
-        v = float(sd["volume_level"])
-        if not (0.0 <= v <= 1.0):
-            return f"volume_level {v} out of range"
-
-    return None
-
-
-# ==================================================
-# Enricher
-# ==================================================
-
-@register("device_control", "enricher")
-async def control(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent != "device_control":
-        return ctx
-
-    # security gate — build allowed domain set for this user's level
-    allowed = _allowed_domains(ctx.user.security_level)
-    if not allowed:
-        ctx.response_text = "You don't have permission to control devices."
-        ctx.skip_processor = True
-        log.info("device_control_denied",
-                 level=ctx.user.security_level, user_id=ctx.user.user_id)
-        return ctx
-
-    ha = providers.get_provider("homeassistant")
-    if ha is None or not ha.is_ready:
-        ctx.response_text = "I can't reach Home Assistant right now."
-        ctx.skip_processor = True
-        return ctx
-
-    # require entity context from entity_enricher
-    resolved = ctx.metadata.get("resolved_entities")
-    if not resolved:
-        ctx.response_text = "I couldn't identify which device you mean. Try being more specific."
-        ctx.skip_processor = True
-        log.info("device_control_no_entities", user_id=ctx.user.user_id)
-        return ctx
-
-    ctx.skip_processor = True
-
-    # known area_ids from the resolved matches
-    known_area_ids = {
-        m["area_id"] for m in resolved
-        if m["type"] == "area" and m["area_id"]
-    }
-
-    # fetch states for entity validation
-    extra  = ["media_player"] if ctx.intent == "media_control" else []
-    states = await ha.get_states(domains=list(_DEVICE_DOMAIN_PERMISSIONS_ALL) + extra)
-
-    if not states:
-        ctx.response_text = "I can't reach Home Assistant right now."
-        return ctx
-
-    # build extraction prompt — normalize possessives for clean LLM parsing
-    command        = _normalize_query(ctx.raw_message, ctx.user.area)
-    resolver_block = _format_resolved(resolved, command)
-    user_content   = (
-        f"Current user: {ctx.user.user_id}\n\n"
-        f"{resolver_block}\n\n"
-        f"Command: {command}"
-    )
-
-    messages = [
-        {"role": "system", "content": _EXTRACT_SYSTEM},
-        {"role": "user",   "content": user_content},
-    ]
-
-    try:
-        result = await call_internal(
-            messages=messages,
-            temperature=0.1,
-            max_tokens=128,
-            fallback_slot=ctx.user.slot,
-        )
-        action = json.loads(result.content)
-    except json.JSONDecodeError as e:
-        log.warning("device_control_bad_json", error=str(e), user_id=ctx.user.user_id)
-        ctx.response_text = "I couldn't figure out what to control. Try again?"
-        return ctx
-    except Exception as e:
-        log.error("device_control_extract_failed", error=str(e), user_id=ctx.user.user_id)
-        ctx.response_text = "Something went wrong. Try again?"
-        return ctx
-
-    # validate: security + whitelist + known entity/area
-    err = _validate(action, allowed, states, known_area_ids)
-    if err:
-        log.warning("device_control_validation_failed",
-                    reason=err, action=action, user_id=ctx.user.user_id)
-        ctx.response_text = "I'm not sure what you want me to control. Can you be more specific?"
-        return ctx
-
-    domain       = action["domain"]
-    service      = action["service"]
-    eid          = action.get("entity_id", "")
-    area_id      = action.get("area_id", "")
-    service_data = action.get("service_data") or {}
-
-    ok = await ha.call_service(
-        domain, service,
-        entity_id=eid,
-        area_id=area_id,
-        service_data=service_data,
-    )
-
-    # friendly label
-    if area_id:
-        label = area_id.replace("_", " ").title()
-    else:
-        label = eid.replace("_", " ").split(".")[-1]
-        for s in states:
-            if s["entity_id"] == eid:
-                label = s.get("attributes", {}).get("friendly_name", label)
-                break
-
-    ctx.response_text = (
-        f"Done — {label} {_ACTION_LABELS.get(service, service.replace('_', ' '))}."
-        if ok else
-        f"Something went wrong trying to control {label}."
-    )
-
-    log.info("device_control_command",
-             domain=domain, service=service,
-             entity_id=eid, area_id=area_id,
-             success=ok, user_id=ctx.user.user_id)
-
-    return ctx
-
-
 # all domains across all permission levels — used for state fetching
 _DEVICE_DOMAIN_PERMISSIONS_ALL: set[str] = {
     d for domains in DEVICE_DOMAIN_PERMISSIONS.values() for d in domains
 }
+
+
+# ==================================================
+# Tool handler helpers
+# ==================================================
+
+# tool LLM action values → (ha_service, base_service_data)
+_ACTION_TO_SERVICE: dict[str, tuple[str, dict]] = {
+    "on":       ("turn_on",  {}),
+    "off":      ("turn_off", {}),
+    "toggle":   ("toggle",   {}),
+    "dim":      ("turn_on",  {"brightness_step": -50}),
+    "brighten": ("turn_on",  {"brightness_step": 50}),
+    "lock":     ("lock",     {}),
+    "unlock":   ("unlock",   {}),
+}
+
+
+# words that don't identify a specific device ("turn off the lights")
+_GENERIC_WORDS  = {"the", "my", "all", "a", "light", "lights", "lamp", "lamps", "device", "devices"}
+_LIGHT_WORDS    = {"light", "lights", "lamp", "lamps"}
+# "bedroom lights" / "my room light" → the speaker's own room
+_OWN_ROOM_WORDS = {"bedroom", "room"}
+_UNREACHABLE    = {"unavailable", "unknown"}
+
+
+def _tokens(text: str) -> set[str]:
+    text = re.sub(r"'s\b", "", text.lower())
+    return set(re.sub(r"[._\-]", " ", text).split())
+
+
+def _friendly(s: dict) -> str:
+    return s.get("attributes", {}).get("friendly_name", s["entity_id"])
+
+
+def _find_entity(
+    ref: str, states: list[dict], allowed: set[str], user_id: str,
+) -> tuple[dict | None, list[dict]]:
+    """Find the HA entity the tool LLM's entity string refers to.
+    Returns (match, candidates) — candidates is non-empty only when a
+    generic reference ("the lights") is ambiguous."""
+    ref_lower = ref.lower().strip()
+    ref_words = _tokens(ref_lower)
+    pool      = [s for s in states
+                 if s["entity_id"].split(".")[0] in allowed and not device_excluded(s)]
+
+    # pass 1: exact friendly name
+    for s in pool:
+        if _friendly(s).lower() == ref_lower:
+            return s, []
+
+    # passes 2-3 only for refs that name something specific — a bare
+    # "light"/"the lights" matched any "... light" here and switched on
+    # someone else's lamp ("set the color to warm white", 2026-10-06)
+    if ref_words - _GENERIC_WORDS:
+        # pass 2: all ref words appear in friendly name
+        for s in pool:
+            if ref_words.issubset(_tokens(_friendly(s))):
+                return s, []
+
+        # pass 3: ref is a substring of entity_id (dots/underscores → spaces)
+        for s in pool:
+            eid_flat = s["entity_id"].lower().replace(".", " ").replace("_", " ")
+            if ref_lower in eid_flat:
+                return s, []
+
+    # pass 4: generic reference — resolve to the speaker's own device,
+    # or the only reachable one
+    specific = ref_words - _GENERIC_WORDS
+    if specific and not specific <= _OWN_ROOM_WORDS:
+        return None, []
+
+    cands = pool
+    if ref_words & _LIGHT_WORDS:
+        cands = [s for s in pool if s["entity_id"].startswith("light.")]
+
+    # never fall through to someone else's device just because it's the only
+    # one online — anything but a single obvious match becomes a question
+    own = [s for s in cands if user_id.lower() in _tokens(_friendly(s))]
+    if len(own) == 1:
+        return own[0], []
+
+    return None, (own or cands)
+
+
+# color words HA's color_name doesn't know → color temperature
+_WHITE_TEMPS_K: dict[str, int] = {
+    "warm white": 2700, "warm": 2700, "soft white": 3000,
+    "white": 4000, "neutral white": 4000, "natural white": 4000,
+    "cool white": 5000, "cool": 5000, "daylight": 6500,
+}
+
+
+def _map_action(action: str, domain: str, value: str) -> tuple[str, dict, str | None]:
+    """Map tool action + optional value to (ha_service, service_data, error)."""
+    # "dim the lights to 50 percent" → the tool LLM sends dim + value
+    if action in ("dim", "brighten") and value and re.fullmatch(r"\d{1,3}%?", value.strip()):
+        action, value = "set_brightness", value.strip().rstrip("%")
+
+    if action in _ACTION_TO_SERVICE:
+        service, sdata = _ACTION_TO_SERVICE[action]
+        return service, dict(sdata), None
+
+    if action == "set_brightness":
+        try:
+            pct = int(value)
+            if not 0 <= pct <= 100:
+                return "", {}, "Brightness must be 0–100."
+            return "turn_on", {"brightness": int(pct * 2.55)}, None
+        except (ValueError, TypeError):
+            return "", {}, "I need a brightness value (0–100)."
+
+    if action == "set_temperature":
+        try:
+            return "set_temperature", {"temperature": float(value)}, None
+        except (ValueError, TypeError):
+            return "", {}, "I need a temperature value."
+
+    if action == "set_color":
+        if not value:
+            return "", {}, "I need a color name."
+        color = value.lower().strip()
+        if color in _WHITE_TEMPS_K:
+            return "turn_on", {"color_temp_kelvin": _WHITE_TEMPS_K[color]}, None
+        return "turn_on", {"color_name": color}, None
+
+    return "", {}, f"I don't know how to '{action}' a device."
+
+
+# ==================================================
+# Tool handler
+# ==================================================
+
+@tool("control_device")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
+    ha = providers.get_provider("homeassistant")
+    if ha is None or not ha.is_ready:
+        return "I can't reach Home Assistant right now."
+
+    allowed = _allowed_domains(ctx.user.security_level)
+    if not allowed:
+        return "You don't have permission to control devices."
+
+    entity_ref = (args.get("entity") or "").strip()
+    action     = (args.get("action") or "").strip().lower()
+    value      = (args.get("value") or "").strip()
+
+    if not entity_ref or not action:
+        return "I need to know which device and what action to take."
+
+    states = await ha.get_states(domains=list(_DEVICE_DOMAIN_PERMISSIONS_ALL))
+    if not states:
+        return "I can't get device states right now."
+
+    target, candidates = _find_entity(entity_ref, states, allowed, ctx.user.user_id)
+    if not target:
+        if candidates:
+            names = ", ".join(_friendly(c) for c in candidates)
+            return f"Which one did you mean: {names}?"
+        return f"I couldn't find a device matching '{entity_ref}'."
+
+    if target.get("state") in _UNREACHABLE:
+        return (f"{_friendly(target)} is {target.get('state')} — "
+                "Home Assistant can't reach it right now.")
+
+    eid      = target["entity_id"]
+    domain   = eid.split(".")[0]
+    friendly = target.get("attributes", {}).get("friendly_name", eid)
+
+    if domain not in allowed:
+        return f"You don't have permission to control {friendly}."
+
+    service, service_data, err = _map_action(action, domain, value)
+    if err:
+        return err
+
+    if domain not in _ALLOWED or service not in _ALLOWED[domain]:
+        return f"That action isn't supported for {friendly}."
+
+    ok = await ha.call_service(domain, service, entity_id=eid, service_data=service_data)
+
+    label = _ACTION_LABELS.get(service, service.replace("_", " "))
+    log.info("control_device_tool_ok",
+             entity=eid, service=service, success=ok)
+    return f"Done — {friendly} {label}." if ok else f"Something went wrong controlling {friendly}."

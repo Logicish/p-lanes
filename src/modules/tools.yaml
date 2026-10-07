@@ -1,0 +1,319 @@
+# modules/tools.yaml
+#
+# Tool registry definitions for v0.7.0.
+#
+# Each entry defines one tool available to the tool LLM and the fast-path
+# executor. Fields:
+#
+#   name         — internal tool name. Must match the name passed to @tool()
+#                  in the handler module.
+#
+#   description  — shown to the tool LLM verbatim. This is the routing
+#                  signal — write it as explicit trigger conditions, not a
+#                  user-facing summary. Bad descriptions = wrong tool calls.
+#
+#   parameters   — JSON Schema object describing the tool's arguments.
+#                  The tool LLM extracts these from the user's message.
+#                  Empty object {} for no-arg tools.
+#
+#   min_security — minimum user security_level required to call this tool.
+#                  0=GUEST  1=USER  2=TRUSTED  3=ADMIN_LITE  4=ADMIN
+#                  Permission is enforced by permission_interceptor, not the LLM.
+#
+#   directive    — template injected into the conversational LLM after the
+#                  tool executes. {result} is replaced with the tool's return
+#                  string. Tells the LLM exactly what to relay and how.
+#
+# Tool descriptions can be overridden here without touching handler code.
+# Handler code (@tool decorator) provides the fallback if a tool is not
+# listed here — this file only needs entries when you want to tune routing.
+# ==================================================
+
+tools:
+
+  # --------------------------------------------------
+  # Home state read — lights, locks, climate, sensors.
+  # Read-only. No actions, no commands.
+  # --------------------------------------------------
+  - name: query_home_state
+    intent: ha_sensor
+    description: >
+      Read the current state of home devices. Use when the user asks whether
+      something is on or off, what the thermostat is set to, whether a door is
+      locked, which lights are on, or the current status of any home device.
+      Read-only queries only — for changing device state use control_device.
+    parameters:
+      type: object
+      properties:
+        domains:
+          type: array
+          items:
+            type: string
+          description: >
+            HA domain(s) to narrow the query, e.g. ["light"] or ["lock"].
+            Use ["sun"] for sunrise, sunset, dawn or dusk times.
+            Omit to query all controllable domains.
+      required: []
+    min_security: 1
+    directive: >
+      Home device states, read just now: {result}
+      Answer the user's question using only these lines. Report a device or
+      value only if it appears above, exactly as listed — do not add devices,
+      battery levels, times, or states that are not in the list.
+
+  # --------------------------------------------------
+  # Device control — write operations on home devices.
+  # --------------------------------------------------
+  - name: control_device
+    intent: device_control
+    description: >
+      Control a smart home device. Use when the user wants to turn something
+      on or off, dim or brighten lights, lock or unlock a door, adjust a
+      thermostat or AC setting, toggle a switch or fan, or change a light color.
+      Requires identifying the target device and action from the user's message.
+    parameters:
+      type: object
+      properties:
+        entity:
+          type: string
+          description: >
+            The device, room, or area the user referred to, exactly as stated.
+            Examples: "office light", "bedroom lamp", "front door", "thermostat".
+            If the user just said "the lights" or "my light", pass that as-is.
+        action:
+          type: string
+          enum: ["on", "off", toggle, dim, brighten, set_brightness, lock, unlock, set_temperature, set_color]
+          description: >
+            The action to perform. "turn up the heat" is set_temperature, not
+            brighten. Volume, channels, inputs, and playback are not device
+            actions — do not call this tool for them.
+        value:
+          type: string
+          description: >
+            Numeric or named value when the user specified one.
+            Brightness: 0-100. Temperature: degrees. Color: name or hex.
+            Omit if the user did not specify a value.
+      required: ["entity", "action"]
+    min_security: 1
+    directive: >
+      Device action result: {result}
+      Tell the user this result in one short sentence, in your persona.
+
+  # --------------------------------------------------
+  # Weather — outside conditions from the weather service.
+  # --------------------------------------------------
+  - name: get_weather
+    intent: outside_weather
+    description: >
+      Fetch current outside weather conditions and the upcoming forecast.
+      Use when the user asks about weather, temperature outside, chance of rain,
+      wind, forecast for today or this week, or whether to bring a jacket.
+      For indoor device temperatures use query_home_state instead.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    min_security: 0
+    directive: >
+      Relay this weather to the user in your persona.
+      State all the information — temperature, conditions, anything notable: {result}
+
+  # --------------------------------------------------
+  # Timer / alarm — countdown or clock-based alerts.
+  # --------------------------------------------------
+  - name: set_timer
+    intent: timer_alarm
+    description: >
+      Set a countdown timer or a clock-based alarm. Use when the user specifies
+      a duration ("in 30 minutes", "for an hour", "45 second timer") or a target
+      time ("at 7am", "wake me up at 6:30", "remind me at 3pm").
+      One of duration_seconds or target_time must be provided.
+    parameters:
+      type: object
+      properties:
+        duration_seconds:
+          type: integer
+          description: >
+            Countdown duration in seconds. Use for relative requests:
+            "in X minutes" → X*60, "in an hour" → 3600.
+        target_time:
+          type: string
+          description: >
+            Target clock time for an alarm. 24-hour format preferred: "07:00".
+            Use for absolute requests: "at 7am", "wake me up at 6:30".
+        label:
+          type: string
+          description: >
+            Optional description of what the timer is for, e.g. "pasta", "laundry".
+      required: []
+    min_security: 1
+    directive: >
+      Relay this timer confirmation to the user in your persona.
+      Be specific about when it will fire: {result}
+
+  # --------------------------------------------------
+  # Media control — playback and volume.
+  # --------------------------------------------------
+  - name: media_control
+    intent: media_control
+    description: >
+      Control media playback. Use when the user wants to play, pause, stop,
+      or resume music; skip to the next track or go to the previous one;
+      turn the volume up or down; mute or unmute; or play a specific style
+      or genre of music.
+    parameters:
+      type: object
+      properties:
+        action:
+          type: string
+          description: >
+            Playback action. One of:
+            play, pause, stop, resume, skip, previous,
+            volume_up, volume_down, set_volume, mute, unmute.
+        value:
+          type: integer
+          description: >
+            Volume level 0-100. Only include for set_volume action.
+        query:
+          type: string
+          description: >
+            Music style, genre, or mood for play requests.
+            Examples: "something upbeat", "jazz", "lo-fi". Omit if not specified.
+      required: ["action"]
+    min_security: 0
+    directive: >
+      Relay this media control result to the user in your persona.
+      Keep it short: {result}
+
+  # --------------------------------------------------
+  # Web search — live internet data.
+  # --------------------------------------------------
+  - name: web_search
+    intent: web_search
+    description: >
+      Search the internet for live or time-sensitive information. Use for news,
+      recent events, current prices, weather warnings, sports scores, release
+      dates, anything that changes frequently and cannot come from stored notes.
+      Do not use for questions answerable from personal saved notes or general
+      knowledge the assistant already has.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "The search query, optimised for a web search engine."
+        location_context:
+          type: boolean
+          description: >
+            Set true when the query is location-specific and the user said
+            "near me", "nearby", "around here", or similar. Appends the home
+            location to the search query automatically.
+      required: ["query"]
+    min_security: 0
+    directive: >
+      Relay these search results to the user in your persona.
+      Summarise the key findings naturally: {result}
+
+  # --------------------------------------------------
+  # Local search — RAG knowledge base and saved notes.
+  # --------------------------------------------------
+  - name: local_search
+    intent: local_search
+    description: >
+      Search the local knowledge base — personal saved notes, technical specs,
+      component pinouts, datasheets, recipes, how-to guides. Use when the user
+      asks to look something up from their notes, find a saved spec or recipe,
+      or retrieve stored knowledge. Prefer this over web_search for technical
+      details and personal information that may have been saved previously.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "What to search for in the local knowledge base."
+      required: ["query"]
+    min_security: 0
+    directive: >
+      Relay these results from the local knowledge base to the user in your persona: {result}
+
+  # --------------------------------------------------
+  # Save note — store a fact or note to personal RAG.
+  # --------------------------------------------------
+  - name: save_note
+    intent: add_note
+    description: >
+      Save a fact, preference, technical detail, or any information to the
+      user's personal knowledge base. Use when the user explicitly says to
+      remember, save, note, log, store, or jot something down.
+      Do not use for general conversation or questions.
+    parameters:
+      type: object
+      properties:
+        raw_message:
+          type: string
+          description: >
+            The user's full original message verbatim, including the
+            remember/save/note command phrase. The handler extracts and
+            classifies the content internally.
+      required: ["raw_message"]
+    min_security: 0
+    directive: >
+      Relay this note-save confirmation to the user in your persona.
+      Keep it brief: {result}
+
+  # --------------------------------------------------
+  # Fact check — verify the assistant's last response.
+  # --------------------------------------------------
+  - name: fact_check
+    intent: verify_last
+    description: >
+      Verify or fact-check the assistant's most recent response. Use when the
+      user questions whether something just said was accurate, asks to verify,
+      double-check, confirm, or says it doesn't sound right. Always references
+      the prior assistant turn — do not use for general fact questions.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    min_security: 0
+    directive: >
+      Relay this fact-check verdict to the user in your persona.
+      Be clear about what was confirmed or corrected: {result}
+
+  # --------------------------------------------------
+  # List commands — show available capabilities.
+  # --------------------------------------------------
+  - name: list_commands
+    intent: list_commands
+    description: >
+      Return a list of available commands and capabilities for this user.
+      Use when the user asks what you can do, requests help, asks for a
+      command list, or wants to know what is available to ask.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    min_security: 0
+    directive: >
+      Present these available commands to the user in your persona.
+      Make it feel natural, not robotic: {result}
+
+  # --------------------------------------------------
+  # System status — server and infrastructure health.
+  # --------------------------------------------------
+  - name: system_status
+    intent: system_status
+    description: >
+      Get current health and performance of the home server infrastructure —
+      container status, GPU metrics, LLM uptime, CPU, memory, disk, alerts.
+      Use when the user asks about server health, system status, how the
+      machines are doing, or whether there are any issues.
+      Not for home device state — use query_home_state for lights, locks, etc.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    min_security: 1
+    directive: >
+      Relay this system health report to the user in your persona.
+      Highlight anything notable — don't just list numbers: {result}

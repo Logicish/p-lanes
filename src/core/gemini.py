@@ -36,6 +36,7 @@
 # Imports
 # ==================================================
 import asyncio
+import re
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -250,22 +251,21 @@ async def call(
 
         # 429 — parse whether it's RPM or RPD exhaustion
         if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-            # try to extract retryDelay from error details
             retry_delay = _parse_retry_delay(err_str)
 
-            if retry_delay and retry_delay < 30:
-                # short delay → RPM limit, retry once after waiting
-                log.warning("gemini_rpm_limit_hit",
-                            retry_delay=retry_delay)
-                await asyncio.sleep(retry_delay + 1)
+            if retry_delay is not None and retry_delay >= 30:
+                # long explicit delay → daily quota exhausted
+                _rate_limiter.mark_daily_exhausted()
+                raise LLMCallError("Gemini daily quota exhausted") from e
+            else:
+                # short delay or no delay info → treat as RPM, back off and retry once
+                backoff = (retry_delay + 1) if retry_delay else 10
+                log.warning("gemini_rpm_limit_hit", retry_delay=retry_delay, backoff=backoff)
+                await asyncio.sleep(backoff)
                 try:
                     return await call(messages, temperature, max_tokens)
                 except Exception as retry_err:
                     raise LLMCallError(f"Gemini retry failed: {retry_err}") from retry_err
-            else:
-                # long delay or no delay info → assume daily quota
-                _rate_limiter.mark_daily_exhausted()
-                raise LLMCallError("Gemini daily quota exhausted") from e
 
         log.warning("gemini_call_failed", error=err_str)
         raise LLMCallError(f"Gemini call failed: {e}") from e
@@ -297,7 +297,6 @@ async def verify(response_text: str) -> str | None:
 
 def _parse_retry_delay(err_str: str) -> float | None:
     """Extract retryDelay seconds from a 429 error string if present."""
-    import re
     match = re.search(r'retryDelay["\s:]+([0-9.]+)s', err_str)
     if match:
         return float(match.group(1))

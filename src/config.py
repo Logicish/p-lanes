@@ -61,7 +61,8 @@ BRAIN_DESCRIPTION = _cfg["brain"]["description"]
 LOG_FILE       = Path(_cfg["paths"]["log_file"])
 USER_DATA_ROOT = Path(_cfg["paths"]["user_data_root"])
 MODEL_PATH     = Path(_cfg["paths"]["model"])
-PROJECTOR_PATH = Path(_cfg["paths"]["projector"])
+_proj = _cfg["paths"].get("projector", "")
+PROJECTOR_PATH = Path(_proj) if _proj else None
 LLAMA_SERVER   = Path(_cfg["paths"]["llama_server"])
 
 # ==================================================
@@ -94,6 +95,19 @@ _recovery_cfg         = _cfg["llm"].get("recovery", {})
 RECOVERY_MAX_RETRIES  = _recovery_cfg.get("max_retries", 5)
 RECOVERY_INITIAL_WAIT = _recovery_cfg.get("initial_wait", 5)
 RECOVERY_MAX_WAIT     = _recovery_cfg.get("max_wait", 120)
+
+# ==================================================
+# GPU Guard (core/gpu_guard.py)
+# ==================================================
+_gg_cfg                        = _cfg.get("gpu_guard", {}) or {}
+GPU_GUARD_ENABLED              = _gg_cfg.get("enabled", True)
+GPU_GUARD_POLL_SECONDS         = _gg_cfg.get("poll_seconds", 15)
+GPU_GUARD_HOLD_C               = _gg_cfg.get("hold_c", 83)
+GPU_GUARD_KILL_C               = _gg_cfg.get("kill_c", 87)
+GPU_GUARD_RESUME_C             = _gg_cfg.get("resume_c", 72)
+GPU_GUARD_UNREACHABLE_S        = _gg_cfg.get("unreachable_s", 45)
+GPU_GUARD_MAX_KILLS_PER_HOUR   = _gg_cfg.get("max_kills_per_hour", 2)
+GPU_GUARD_NOTIFY_COOLDOWN_MIN  = _gg_cfg.get("notify_cooldown_min", 15)
 
 # ==================================================
 # Slots / KV Cache
@@ -139,6 +153,17 @@ DEFAULT_MIN_P             = _cfg["sampling"]["min_p"]
 DEFAULT_PRESENCE_PENALTY  = _cfg["sampling"]["presence_penalty"]
 DEFAULT_MAX_TOKENS        = _cfg["sampling"]["max_tokens"]
 
+# per-turn profiles (main._pick_profile) — merged over the defaults above
+SAMPLING_PROFILES: dict[str, dict] = _cfg.get("sampling_profiles", {}) or {}
+THINK_MIN_HEADROOM = _cfg.get("think_min_headroom", 2200)
+
+# house clock — server runs UTC; the model is shown this zone
+from zoneinfo import ZoneInfo as _ZoneInfo
+TIMEZONE = _ZoneInfo(_cfg.get("timezone", "UTC"))
+
+# shared rule block appended after every persona (core/slots.build_messages)
+HOUSE_RULES: str = (_cfg.get("house_rules") or "").strip()
+
 # ==================================================
 # Security Levels (5 levels)
 # ==================================================
@@ -152,12 +177,18 @@ class SecurityLevel:
 # ==================================================
 # Users — build slot map and security from users.yaml
 # ==================================================
-SLOT_MAP: dict[str, int] = {}
-USER_SECURITY: dict[str, int] = {}
+SLOT_MAP:        dict[str, int]  = {}
+USER_SECURITY:   dict[str, int]  = {}
+USER_PASSWORDS:  dict[str, str]  = {}
+USER_SUMMARIZE:  dict[str, bool] = {}
+USER_WEB_ENABLED: dict[str, bool] = {}
 
 for uid, udata in _users_cfg.items():
-    SLOT_MAP[uid] = udata["slot"]
-    USER_SECURITY[uid] = udata["security"]
+    SLOT_MAP[uid]        = udata["slot"]
+    USER_SECURITY[uid]   = udata["security"]
+    USER_PASSWORDS[uid]  = udata.get("password_hash", "")
+    USER_SUMMARIZE[uid]  = udata.get("summarize", True)
+    USER_WEB_ENABLED[uid] = udata.get("web_enabled", True)
 
 # ==================================================
 # Guest
@@ -167,18 +198,19 @@ GUEST_ENABLED = _cfg.get("guest", {}).get("enabled", True)
 # ==================================================
 # Utility Lane
 # ==================================================
-# When enabled, background tasks (summarization, etc.)
-# run on the dedicated utility slot without blocking
-# the user. When disabled, tasks fall back to the
-# requesting user's own slot with a brief lock.
+# When enabled, background tasks (summarization, tool
+# LLM calls, PII checks) run on the guest slot without
+# blocking the requesting user's own slot.
+# When disabled, tasks fall back to the requesting
+# user's own slot with a brief lock.
 # ==================================================
 UTILITY_ENABLED = _cfg.get("utility", {}).get("enabled", True)
 
-# safety check: utility toggled on but not in slot map
-if UTILITY_ENABLED and "utility" not in SLOT_MAP:
+# safety check: utility enabled but guest slot missing
+if UTILITY_ENABLED and "guest" not in SLOT_MAP:
     import warnings
     warnings.warn(
-        "utility.enabled is true but 'utility' is not in users config. "
+        "utility.enabled is true but 'guest' is not in users config. "
         "Falling back to user-slot summarization."
     )
     UTILITY_ENABLED = False
@@ -195,9 +227,35 @@ MODULE_PERMISSIONS: dict[str, int] = _cfg.get("module_permissions", {}) or {}
 MODULE_PRIORITIES: dict[str, int] = _cfg.get("module_priorities", {}) or {}
 
 # ==================================================
+# Disabled Features
+# ==================================================
+# Names matched against @register module names, @tool names,
+# and scheduled-job source files (modules/<name>.py).
+DISABLED: frozenset[str] = frozenset(_cfg.get("disabled", []) or [])
+
+def is_disabled(name: str | None) -> bool:
+    return bool(name) and name in DISABLED
+
+# ==================================================
+# Turn Log
+# ==================================================
+_turn_cfg = _cfg.get("turn_log", {}) or {}
+TURN_LOG_ENABLED        = _turn_cfg.get("enabled", True)
+TURN_LOG_PAYLOAD_DAYS   = _turn_cfg.get("payload_retention_days", 180)
+TURN_LOG_MAX_DB_MB      = _turn_cfg.get("max_db_mb", 500)
+TURN_LOG_RETENTION_CRON = _turn_cfg.get("retention_cron", "30 9 * * *")
+
+# ==================================================
 # Device Domain Permissions
 # ==================================================
 # Cumulative: security level N grants all domains listed at levels <= N.
+DEVICE_EXCLUDE: list[str] = [p.lower() for p in (_cfg.get("device_exclude", []) or [])]
+
+def device_excluded(state: dict) -> bool:
+    eid  = state.get("entity_id", "").lower()
+    name = state.get("attributes", {}).get("friendly_name", "").lower()
+    return any(p in eid or p in name for p in DEVICE_EXCLUDE)
+
 DEVICE_DOMAIN_PERMISSIONS: dict[int, list[str]] = {
     int(k): v
     for k, v in (_cfg.get("device_domain_permissions", {}) or {}).items()
@@ -224,7 +282,7 @@ def build_llm_cmd() -> list[str]:
     cmd = [
         str(LLAMA_SERVER),
         "--model",          str(MODEL_PATH),
-        "--mmproj",         str(PROJECTOR_PATH),
+        *(["--mmproj", str(PROJECTOR_PATH)] if PROJECTOR_PATH else []),
         "--host",           LLM_HOST,
         "--port",           str(LLM_PORT),
         "--n-gpu-layers",   str(GPU_LAYERS),
@@ -233,9 +291,11 @@ def build_llm_cmd() -> list[str]:
         "--cache-type-k",   KV_CACHE_TYPE,
         "--cache-type-v",   KV_CACHE_TYPE,
     ]
+    cmd += ["--jinja"]           # required for Qwen3.5 chat template + chat_template_kwargs
+    cmd += ["-ub", "2048"]       # larger physical batch for faster prefill
     if FLASH_ATTN:
         cmd += ["--flash-attn", "on"]
-    if MMPROJ_OFFLOAD:
+    if MMPROJ_OFFLOAD and PROJECTOR_PATH:
         cmd.append("--mmproj-offload")
     if REASONING_OFF:
         cmd += ["--reasoning", "off"]

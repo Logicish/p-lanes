@@ -6,51 +6,38 @@
 #
 # ==================================================
 # Outside weather query module.
-# Intercepts the 'outside_weather' intent and answers
-# weather questions using the HA weather entity.
+# Intercepts the 'outside_weather' intent and injects
+# current weather data into ctx.enrichments so the
+# main LLM processor answers through the user's persona.
 #
 # Read-only — never calls a service.
-# Sets skip_processor = True — stays out of the
-# user's conversation slot.
-#
-# TODO: weather entity is currently hardcoded to
-# 'weather.forecast_home'. Make this configurable
-# in providers/homeassistant/config.yaml when
-# multiple weather sources need selection.
+# Does NOT set skip_processor — the user's slot handles
+# the LLM call, keeping the exchange in conversation
+# history and persona-consistent.
 #
 # Security: GUEST (0) — all users can ask about weather.
-# No module_permissions entry needed (default is USER=1).
-# Set explicitly to 0 in config.yaml if guest access wanted.
+# Set explicitly to 0 in module_permissions in config.yaml.
 #
 # Knows about: core/events (register),
 #              core/pipeline (PipelineContext),
-#              providers (get_provider),
-#              config (LLM_URL).
+#              providers (get_provider).
 # ==================================================
 
 # ==================================================
 # Imports
 # ==================================================
-import aiohttp
 import structlog
 
 import providers
-from config import LLM_URL
-from core.events import register
 from core.pipeline import PipelineContext
+from core.tool_registry import tool
 
 log = structlog.get_logger()
-
-_WEATHER_SYSTEM = """\
-You are a weather assistant. Answer the user's weather question using ONLY the data provided.
-Be conversational and brief — one or two sentences. Include relevant details like temperature,
-conditions, and precipitation if asked. Do not make up forecasts not in the data.\
-"""
 
 
 def _format_weather(state: dict) -> str:
     """Format a HA weather entity state into a readable summary."""
-    attrs    = state.get("attributes", {})
+    attrs     = state.get("attributes", {})
     condition = state.get("state", "unknown")
     temp      = attrs.get("temperature", "?")
     temp_unit = attrs.get("temperature_unit", "")
@@ -72,12 +59,12 @@ def _format_weather(state: dict) -> str:
         upcoming = forecast[:3]
         lines.append("Forecast:")
         for f in upcoming:
-            day       = f.get("datetime", "?")[:10]
-            cond      = f.get("condition", "?")
-            high      = f.get("temperature", "?")
-            low       = f.get("templow", None)
-            precip    = f.get("precipitation_probability", None)
-            line      = f"  {day}: {cond}, high {high}{temp_unit}"
+            day    = f.get("datetime", "?")[:10]
+            cond   = f.get("condition", "?")
+            high   = f.get("temperature", "?")
+            low    = f.get("templow", None)
+            precip = f.get("precipitation_probability", None)
+            line   = f"  {day}: {cond}, high {high}{temp_unit}"
             if low is not None:
                 line += f" / low {low}{temp_unit}"
             if precip is not None:
@@ -87,61 +74,24 @@ def _format_weather(state: dict) -> str:
     return "\n".join(lines)
 
 
-@register("weather_query", "classifier")
-async def handle(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent != "outside_weather":
-        return ctx
 
+@tool("get_weather")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
     ha = providers.get_provider("homeassistant")
     if ha is None or not ha.is_ready:
-        log.warning("ha_provider_unavailable_weather", user_id=ctx.user.user_id)
-        return ctx
-
-    ctx.skip_processor = True
+        return "Weather data unavailable — home assistant is not connected."
 
     states = await ha.get_states(domains=["weather"])
     if not states:
-        ctx.response_text = "I can't reach the weather service right now."
-        return ctx
+        return "No weather data available right now."
 
-    # prefer the configured entity, fall back to first available
     weather_entity = ha.weather_entity
     weather_state = next(
         (s for s in states if s["entity_id"] == weather_entity),
-        states[0] if states else None
+        states[0],
     )
-
     if not weather_state:
-        ctx.response_text = "No weather data available."
-        return ctx
+        return "Weather entity not found."
 
-    summary      = _format_weather(weather_state)
-    user_content = f"Weather data:\n{summary}\n\nUser question: {ctx.raw_message}"
-
-    payload = {
-        "model":       "local",
-        "messages":    [
-            {"role": "system", "content": _WEATHER_SYSTEM},
-            {"role": "user",   "content": user_content},
-        ],
-        "temperature": 0.3,
-        "max_tokens":  128,
-    }
-
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.post(LLM_URL, json=payload) as resp:
-                if resp.status != 200:
-                    log.warning("weather_llm_bad_status", status=resp.status)
-                    ctx.response_text = "Couldn't get a weather response."
-                    return ctx
-                data = await resp.json()
-                ctx.response_text = data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        log.error("weather_llm_failed", error=str(e))
-        ctx.response_text = "Something went wrong fetching the weather."
-
-    log.info("weather_query_answered", user_id=ctx.user.user_id)
-    return ctx
+    log.info("get_weather_tool_ok", entity=weather_state["entity_id"])
+    return _format_weather(weather_state)

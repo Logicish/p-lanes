@@ -2,7 +2,7 @@
 # Home Assistant provider configuration.
 
 enabled: true
-url: "http://your-ha-server:8123"
+url: "http://192.168.1.10:8123"
 token: !secret ha_token
 timeout: 10             # seconds — http request timeout
 
@@ -20,5 +20,8 @@ domains:
 # Entity IDs to exclude from the embedding index (e.g. satellite LEDs, virtual devices).
 exclude_entity_ids: []
 
+# Entity IDs to hide from the SPA devices tab (UI only — does not affect voice control or entity resolver).
+hidden_entities: []
+
 # Preferred weather entity for weather_query. Falls back to first available if not found.
-weather_entity: "weather.forecast_home"
+weather_entity: "weather.kasd"

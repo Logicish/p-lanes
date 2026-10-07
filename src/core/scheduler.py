@@ -96,11 +96,11 @@ def schedule(
 # ==================================================
 
 def is_system_idle() -> bool:
-    """True when every non-utility real user is idle (or has never been active)."""
+    """True when every real user (root/marilyn/jj) is idle (or has never been active)."""
     from core.slots import get_all_users
     users = get_all_users()
     for uid, user in users.items():
-        if uid in ("utility", "guest"):
+        if uid == "guest":
             continue
         if not user.is_idle():
             return False
@@ -119,11 +119,18 @@ async def start():
     if not _registry:
         log.info("scheduler_no_jobs")
         return
+    from config import is_disabled
+    started = []
     for job in _registry.values():
+        source = job.handler.__module__.rsplit(".", 1)[-1]
+        if is_disabled(source):
+            log.info("scheduler_job_disabled", job=job.name, source=source)
+            continue
         task = asyncio.create_task(_job_loop(job), name=f"scheduler:{job.name}")
         job.task = task
         _tasks.append(task)
-    log.info("scheduler_started", jobs=list(_registry.keys()))
+        started.append(job.name)
+    log.info("scheduler_started", jobs=started)
 
 
 async def stop():
@@ -166,26 +173,54 @@ def discover_jobs(package_name: str = "modules"):
 # Scheduler loop
 # ==================================================
 
-def _next_run(cron: str) -> datetime:
+def next_run(cron: str) -> datetime:
     """Return the next datetime a cron expression should fire.
     Supports 'M H * * *' format (minute and hour only).
-    """
-    parts = cron.split()
-    target_minute = int(parts[0]) if parts[0] != "*" else 0
-    target_hour   = int(parts[1]) if parts[1] != "*" else 0
 
-    now    = datetime.now()
-    target = now.replace(hour=target_hour, minute=target_minute,
-                         second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
+    M = '*/N'      → fires every N minutes (e.g. */5 = every 5 min)
+    H = '*'        → fires every hour at minute M
+    H = fixed int  → fires daily at H:M
+    """
+    parts      = cron.split()
+    min_field  = parts[0]
+    hour_field = parts[1]
+
+    now = datetime.now()
+
+    if min_field.startswith("*/"):
+        # sub-hourly step — every N minutes regardless of hour field
+        step = int(min_field[2:])
+        total_min  = now.hour * 60 + now.minute
+        next_total = ((total_min // step) + 1) * step
+        target_h   = next_total // 60
+        target_m   = next_total % 60
+        if target_h >= 24:
+            target = now.replace(hour=0, minute=target_m, second=0, microsecond=0) + timedelta(days=1)
+        else:
+            target = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
+        return target
+
+    target_minute = int(min_field) if min_field != "*" else 0
+
+    if hour_field == "*":
+        # hourly — next :MM boundary
+        target = now.replace(minute=target_minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(hours=1)
+    else:
+        # daily — fixed hour
+        target = now.replace(hour=int(hour_field), minute=target_minute,
+                             second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+
     return target
 
 
 async def _job_loop(job: _Job):
     while True:
         try:
-            target       = _next_run(job.cron)
+            target       = next_run(job.cron)
             wait_seconds = (target - datetime.now()).total_seconds()
             log.info("scheduler_job_next_run",
                      job=job.name,

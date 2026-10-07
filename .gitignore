@@ -17,3 +17,6 @@ src/secrets.yaml
 
 # Build artifacts
 *.zip
+
+# Local tools and scripts — not part of the project
+tools/

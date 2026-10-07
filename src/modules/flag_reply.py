@@ -72,8 +72,7 @@ async def classify(ctx: PipelineContext) -> PipelineContext:
     if not _FLAG_PATTERN.search(ctx.raw_message):
         return ctx
 
-    ctx.intent         = "flag_reply"
-    ctx.skip_processor = True
+    ctx.intent = "flag_reply"
 
     # find last assistant and user turns from history
     history = ctx.user.conversation_history
@@ -87,12 +86,12 @@ async def classify(ctx: PipelineContext) -> PipelineContext:
     )
 
     if not last_assistant:
-        ctx.response_text = "Nothing to flag — no previous response found."
+        ctx.directive = "Relay this to the user: Nothing to flag — no previous response found."
         return ctx
 
     _write_flag(ctx.user.user_id, last_user, last_assistant)
 
-    ctx.response_text = "Flagged. I'll note that response was off."
+    ctx.directive = "Relay this confirmation to the user: Flagged. I'll make a note that response was off."
     log.info("reply_flagged", user_id=ctx.user.user_id)
     return ctx
 

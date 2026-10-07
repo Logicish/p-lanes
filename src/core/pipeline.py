@@ -65,13 +65,28 @@ class PipelineContext:
     # --- finalizer output ---
     final_output: str = ""     # what actually gets sent to the channel
 
+    # --- tool pipeline (set by semantic router / main loop) ---
+    fast_path_tool:   str | None       = None   # tool name if fast-path resolved
+    tool_hint:        str | None       = None   # tool name suggested by router (tool LLM path)
+    tool_candidates:  list[str] | None = None   # narrowed tool list for get_manifest()
+    tool_call_count:  int              = 0      # number of tool LLM round-trips this turn
+    directive:        str | None       = None   # directive injected into conv LLM extra_messages
+
+    # --- tool record (set by main.py, read by core/turn_log) ---
+    tool_name:   str | None  = None
+    tool_args:   dict | None = None
+    tool_result: str | None  = None
+
     # --- flags ---
-    aborted:        bool = False
-    abort_reason:   str  = ""
-    skip_processor: bool = False
+    aborted:      bool = False
+    abort_reason: str  = ""
 
     # --- sampling overrides (set by classifier, applied by processor) ---
     temperature_override: float | None = None
+    thinking:             bool         = False
+    # name of a config sampling_profiles entry; router sets it from
+    # intent_profiles, main._pick_profile may override (relay / feature_off)
+    sampling_profile:     str | None   = None
 
     # --- envelope convenience accessors ---
 

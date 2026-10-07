@@ -1,0 +1,1981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>p-lanes</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f0f;
+      --surface:   #1a1a1a;
+      --surface2:  #242424;
+      --border:    #2e2e2e;
+      --accent:    #7c6aff;
+      --accent-dk: #5a4ad1;
+      --text:      #e8e8e8;
+      --text-dim:  #888;
+      --danger:    #e05555;
+      --success:   #4caf72;
+      --radius:    12px;
+      --tab-h:     60px;
+      --header-h:  52px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── Login ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: 24px;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 360px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 24px;
+    }
+
+    .login-card h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+
+    .field { margin-bottom: 14px; }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .field input:focus { border-color: var(--accent); }
+
+    .btn-primary {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover { background: var(--accent-dk); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    #login-error {
+      margin-top: 12px;
+      color: var(--danger);
+      font-size: 13px;
+      min-height: 18px;
+      text-align: center;
+    }
+
+    /* ── App shell ── */
+    #app {
+      display: none;
+      flex-direction: column;
+      height: 100dvh;
+    }
+
+    header {
+      height: var(--header-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      padding-top: env(safe-area-inset-top);
+    }
+
+    header .brand { font-weight: 700; color: var(--accent); font-size: 17px; }
+
+    header .user-info { display: flex; align-items: center; gap: 12px; }
+
+    #user-greeting { font-size: 13px; color: var(--text-dim); }
+
+    .btn-ghost {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+
+    /* ── Tab content ── */
+    #tab-content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tab-pane {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .tab-pane.active { display: flex; flex-direction: column; }
+
+    /* ── Tab bar ── */
+    #tab-bar {
+      height: var(--tab-h);
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-shrink: 0;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: color 0.15s;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .tab-btn .tab-icon { font-size: 19px; line-height: 1; }
+    .tab-btn.active { color: var(--accent); }
+
+    /* ── Chat ── */
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-bottom: 8px;
+    }
+
+    .msg {
+      max-width: 82%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--surface2);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.assistant.streaming::after {
+      content: '▋';
+      animation: blink 0.8s step-end infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    #chat-input-area {
+      display: flex;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+
+    #chat-input {
+      flex: 1;
+      padding: 11px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      resize: none;
+      transition: border-color 0.15s;
+    }
+    #chat-input:focus { border-color: var(--accent); }
+
+    #chat-send {
+      padding: 11px 18px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #chat-send:hover { background: var(--accent-dk); }
+    #chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Devices ── */
+    #devices-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+    }
+
+    .device-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .device-card.on { border-color: var(--accent); }
+
+    .device-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .device-state {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .device-state.on { color: var(--success); }
+
+    .toggle-btn {
+      margin-top: 4px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      text-align: center;
+    }
+
+    .toggle-btn:hover { background: var(--border); }
+
+    .device-card.on .toggle-btn {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .device-card.on .toggle-btn:hover { background: var(--accent-dk); }
+
+    /* brightness slider */
+    .brightness-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brightness-row input[type=range] {
+      flex: 1;
+      accent-color: var(--accent);
+      height: 4px;
+    }
+
+    .brightness-val { font-size: 11px; color: var(--text-dim); min-width: 28px; }
+
+    /* ── Workouts ── */
+    .wk-subnav {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+      flex-shrink: 0;
+    }
+
+    .wk-subnav-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 0;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      transition: color 0.15s, border-color 0.15s;
+      margin-bottom: -1px;
+    }
+
+    .wk-subnav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    #wk-log-view, #wk-history-view { flex: 1; overflow-y: auto; }
+
+    .wk-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .wk-meta-full { grid-column: 1 / -1; }
+
+    .wk-label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 5px;
+    }
+
+    .wk-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .wk-input:focus { border-color: var(--accent); }
+
+    .wk-ex-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .wk-ex-header {
+      display: flex;
+      align-items: center;
+      padding: 12px 14px;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .wk-ex-name {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .wk-ex-remove {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+
+    .wk-sets-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .wk-sets-table th {
+      text-align: left;
+      padding: 8px 14px;
+      color: var(--text-dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      font-weight: 500;
+    }
+
+    .wk-sets-table td {
+      padding: 6px 8px 6px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .wk-sets-table td:first-child { color: var(--text-dim); font-size: 12px; width: 32px; }
+
+    .wk-set-input {
+      width: 68px;
+      padding: 7px 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      text-align: center;
+    }
+
+    .wk-set-input:focus { border-color: var(--accent); }
+
+    .wk-set-remove {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 16px;
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+
+    .wk-add-set-row {
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .wk-btn-sm {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .wk-btn-sm:hover { color: var(--text); border-color: var(--text-dim); }
+
+    .wk-add-ex-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .wk-add-ex-row input { flex: 1; }
+
+    .wk-save-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .wk-save-btn:hover { background: var(--accent-dk); }
+    .wk-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .wk-status {
+      text-align: center;
+      font-size: 13px;
+      min-height: 18px;
+      margin-top: 8px;
+    }
+
+    .wk-status.ok  { color: var(--success); }
+    .wk-status.err { color: var(--danger); }
+
+    .wk-session-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .wk-session-card:hover { border-color: var(--accent); }
+
+    .wk-session-date {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .wk-session-name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .wk-session-meta {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .wk-session-meta span { color: var(--text); font-weight: 500; }
+
+    .wk-session-detail {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+
+    .wk-detail-ex {
+      margin-bottom: 8px;
+    }
+
+    .wk-detail-ex-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-size: 11px;
+    }
+
+    .wk-detail-sets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .wk-detail-set-chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .wk-empty { color: var(--text-dim); font-size: 14px; text-align: center; padding: 32px 0; }
+
+    /* ── Admin ── */
+    .admin-section { margin-bottom: 20px; }
+
+    .admin-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .admin-section h2 { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .admin-btn {
+      padding: 11px 16px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin-bottom: 8px;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .admin-btn:hover { background: var(--border); }
+    .admin-btn.danger { color: var(--danger); border-color: var(--danger); }
+    .admin-btn.confirm { color: #f5a623; border-color: #f5a623; }
+
+    .admin-btn-sm {
+      padding: 5px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-dim);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .admin-btn-sm:hover { color: var(--text); border-color: var(--text-dim); }
+
+    .admin-select {
+      flex: 1;
+      padding: 6px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .section-status {
+      font-size: 12px;
+      color: var(--text-dim);
+      min-height: 16px;
+      margin-top: 6px;
+    }
+    .section-status.ok  { color: var(--success); }
+    .section-status.err { color: var(--danger); }
+
+    .info-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-row .key   { color: var(--text-dim); }
+    .info-row .val   { color: var(--text); font-weight: 500; }
+    .info-row .val.ok  { color: var(--success); }
+    .info-row .val.err { color: var(--danger); }
+
+    .slots-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .slots-table th {
+      text-align: left;
+      padding: 5px 8px;
+      color: var(--text-dim);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .slots-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .slots-table tr:last-child td { border-bottom: none; }
+    .dot-ok  { color: var(--success); }
+    .dot-dim { color: var(--text-dim); }
+
+    .dump-pre {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 11px;
+      font-family: monospace;
+      overflow-x: auto;
+      overflow-y: auto;
+      max-height: 360px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: var(--text);
+    }
+
+    /* ── Notifications ── */
+    .notif-wrap {
+      position: relative;
+    }
+
+    .notif-bell {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      position: relative;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .notif-bell:hover { color: var(--text); border-color: var(--text-dim); }
+    .notif-bell.has-unread { color: var(--danger); border-color: var(--danger); }
+
+    .notif-badge {
+      display: inline-block;
+      background: var(--danger);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 10px;
+      padding: 1px 5px;
+      margin-left: 4px;
+      vertical-align: middle;
+      line-height: 14px;
+    }
+
+    .notif-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: min(360px, calc(100vw - 32px));
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      z-index: 200;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100dvh - 90px);
+    }
+
+    .notif-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .notif-header-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .notif-list {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .notif-empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .notif-item {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item.unread { background: rgba(124,106,255,0.05); }
+
+    .notif-item-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .notif-severity {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .notif-severity.critical { background: rgba(224,85,85,0.2); color: var(--danger); }
+    .notif-severity.warning  { background: rgba(245,166,35,0.2); color: #f5a623; }
+    .notif-severity.info     { background: rgba(136,136,136,0.15); color: var(--text-dim); }
+
+    .notif-message {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .notif-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .notif-time {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .notif-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .notif-action-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .notif-action-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+    .snooze-menu {
+      display: none;
+      gap: 4px;
+    }
+    .snooze-menu.open { display: flex; }
+
+    /* ── Loading/error states ── */
+    .loading { color: var(--text-dim); font-size: 14px; padding: 24px 0; text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>p-lanes</h1>
+    <form id="login-form">
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-primary" id="login-btn">Sign in</button>
+      <div id="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ── App ── -->
+<div id="app">
+  <header>
+    <span class="brand">p-lanes</span>
+    <div class="user-info">
+      <div class="notif-wrap" id="notif-wrap">
+        <button class="notif-bell" id="notif-bell" title="Alerts">
+          Alerts<span class="notif-badge" id="notif-badge" style="display:none;"></span>
+        </button>
+        <div class="notif-panel" id="notif-panel" style="display:none;">
+          <div class="notif-header">
+            <span class="notif-header-title" id="notif-panel-title">Alerts</span>
+            <button class="notif-action-btn" id="notif-read-all">Mark all read</button>
+          </div>
+          <div class="notif-list" id="notif-list">
+            <div class="notif-empty">Loading...</div>
+          </div>
+        </div>
+      </div>
+      <span id="user-greeting"></span>
+      <button class="btn-ghost" id="logout-btn">Sign out</button>
+    </div>
+  </header>
+
+  <div id="tab-content">
+
+    <!-- Chat -->
+    <div id="tab-chat" class="tab-pane">
+      <div id="chat-messages"></div>
+      <div id="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Message..." autocomplete="off">
+        <button id="chat-send">Send</button>
+      </div>
+    </div>
+
+    <!-- Devices -->
+    <div id="tab-devices" class="tab-pane">
+      <div id="devices-list"><p class="loading">Loading devices...</p></div>
+    </div>
+
+    <!-- Workouts -->
+    <div id="tab-workouts" class="tab-pane">
+
+      <!-- Sub-nav -->
+      <div class="wk-subnav">
+        <button class="wk-subnav-btn active" data-wkview="log">Log</button>
+        <button class="wk-subnav-btn" data-wkview="history">History</button>
+      </div>
+
+      <!-- Log view -->
+      <div id="wk-log-view">
+        <div class="wk-meta">
+          <div>
+            <label class="wk-label" for="wk-date">Date</label>
+            <input id="wk-date" class="wk-input" type="date">
+          </div>
+          <div>
+            <label class="wk-label" for="wk-duration">Duration (min)</label>
+            <input id="wk-duration" class="wk-input" type="number" min="1" max="300" placeholder="60">
+          </div>
+          <div class="wk-meta-full">
+            <label class="wk-label" for="wk-name">Session Name</label>
+            <input id="wk-name" class="wk-input" type="text" placeholder="Push Day, Leg Day, Cardio…">
+          </div>
+        </div>
+
+        <div id="wk-exercises"></div>
+
+        <!-- Add exercise row -->
+        <div class="wk-add-ex-row">
+          <input id="wk-ex-search" class="wk-input" type="text" list="wk-ex-datalist" placeholder="Search exercise…" autocomplete="off">
+          <datalist id="wk-ex-datalist"></datalist>
+          <button class="wk-btn-sm" id="wk-add-ex-btn">+ Add</button>
+        </div>
+
+        <button class="wk-save-btn" id="wk-save-btn">Save Workout</button>
+        <div id="wk-status" class="wk-status"></div>
+      </div>
+
+      <!-- History view -->
+      <div id="wk-history-view" style="display:none">
+        <div id="wk-history-list"><p class="wk-empty">Loading…</p></div>
+      </div>
+
+    </div>
+
+    <!-- Admin -->
+    <div id="tab-admin" class="tab-pane">
+
+      <!-- System health -->
+      <div class="admin-section">
+        <div class="admin-section-header">
+          <h2>System</h2>
+          <button class="admin-btn-sm" id="admin-health-refresh">Refresh</button>
+        </div>
+        <div id="admin-health-card" class="info-card">
+          <p class="loading" style="padding:4px 0;">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Slots -->
+      <div class="admin-section">
+        <h2 style="margin-bottom:10px;">Slots</h2>
+        <div id="admin-slots-card" class="info-card" style="padding:0;overflow:hidden;">
+          <p class="loading" style="padding:12px 14px;">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Prompt dump -->
+      <div class="admin-section">
+        <h2 style="margin-bottom:10px;">Prompt Dump</h2>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <select id="admin-dump-user" class="admin-select"></select>
+          <button class="admin-btn-sm" id="admin-dump-fetch">Fetch</button>
+        </div>
+        <pre id="admin-dump-pre" class="dump-pre" style="display:none;"></pre>
+        <div id="admin-dump-status" class="section-status"></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="admin-section">
+        <h2 style="margin-bottom:10px;">Controls</h2>
+        <button class="admin-btn" id="admin-llm-restart">Restart LLM server</button>
+        <button class="admin-btn" id="admin-rag-ingest">Trigger RAG ingest</button>
+        <button class="admin-btn" id="admin-entity-refresh">Refresh entity index</button>
+        <div id="admin-controls-status" class="section-status"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <nav id="tab-bar">
+    <button class="tab-btn active" data-tab="chat">
+      <span class="tab-icon">&#9654;</span>Chat
+    </button>
+    <button class="tab-btn" data-tab="devices">
+      <span class="tab-icon">&#9769;</span>Devices
+    </button>
+    <button class="tab-btn" data-tab="workouts">
+      <span class="tab-icon">&#9651;</span>Workouts
+    </button>
+    <button class="tab-btn admin-only" data-tab="admin" style="display:none">
+      <span class="tab-icon">&#9881;</span>Admin
+    </button>
+  </nav>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────
+  let token         = localStorage.getItem('token');
+  let refreshTok    = localStorage.getItem('refresh_token');
+  let userId        = localStorage.getItem('user_id');
+  let securityLevel = parseInt(localStorage.getItem('security_level') || '0');
+  let convId        = null;
+  let streaming     = false;
+
+  // ── Bootstrap ─────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    token ? showApp() : showLogin();
+  });
+
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+
+  function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    const app = document.getElementById('app');
+    app.style.display = 'flex';
+    document.getElementById('user-greeting').textContent = userId;
+    if (securityLevel >= 4) {
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+    }
+    switchTab('chat');
+  }
+
+  // ── Auth helpers ───────────────────────────────────────────────────
+  async function apiFetch(url, opts = {}) {
+    opts.headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...opts.headers };
+    let resp = await fetch(url, opts);
+    if (resp.status === 401) {
+      const ok = await tryRefresh();
+      if (ok) {
+        opts.headers['Authorization'] = `Bearer ${token}`;
+        resp = await fetch(url, opts);
+      } else {
+        doLogout();
+        return null;
+      }
+    }
+    return resp;
+  }
+
+  async function tryRefresh() {
+    try {
+      const r = await fetch('/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshTok }),
+      });
+      if (!r.ok) return false;
+      const d = await r.json();
+      token     = d.token;
+      refreshTok = d.refresh_token;
+      localStorage.setItem('token', token);
+      localStorage.setItem('refresh_token', refreshTok);
+      return true;
+    } catch { return false; }
+  }
+
+  function doLogout() {
+    if (token) fetch('/auth/logout', { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+    localStorage.clear();
+    token = refreshTok = userId = null;
+    securityLevel = 0;
+    convId = null;
+    showLogin();
+  }
+
+  // ── Login form ─────────────────────────────────────────────────────
+  document.getElementById('login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn    = document.getElementById('login-btn');
+    const errEl  = document.getElementById('login-error');
+    const uid    = document.getElementById('username').value.trim().toLowerCase();
+    const pw     = document.getElementById('password').value;
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    try {
+      const r = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, password: pw }),
+      });
+      if (!r.ok) { errEl.textContent = 'Invalid username or password.'; return; }
+      const d = await r.json();
+      token         = d.token;
+      refreshTok    = d.refresh_token;
+      userId        = d.user_id;
+      securityLevel = d.security_level;
+      localStorage.setItem('token', token);
+      localStorage.setItem('refresh_token', refreshTok);
+      localStorage.setItem('user_id', userId);
+      localStorage.setItem('security_level', securityLevel);
+      showApp();
+    } catch { errEl.textContent = 'Connection error.'; }
+    finally { btn.disabled = false; btn.textContent = 'Sign in'; }
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', doLogout);
+
+  // ── Tabs ───────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+    if (tab === 'devices') loadDevices();
+    if (tab === 'admin') { loadAdminHealth(); loadAdminSlots(); }
+    if (tab === 'workouts') initWorkouts();
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // ── Chat ───────────────────────────────────────────────────────────
+  function appendMsg(role, text) {
+    const msgs = document.getElementById('chat-messages');
+    const el   = document.createElement('div');
+    el.className = `msg ${role}`;
+    el.dataset.role = role;
+    const span = document.createElement('span');
+    span.className = 'msg-text';
+    span.textContent = text;
+    el.appendChild(span);
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+    return el;
+  }
+
+  async function sendMessage() {
+    if (streaming) return;
+    const input = document.getElementById('chat-input');
+    const text  = input.value.trim();
+    if (!text) return;
+    input.value = '';
+
+    appendMsg('user', text);
+    const aEl = appendMsg('assistant', '');
+    aEl.classList.add('streaming');
+    const textEl = aEl.querySelector('.msg-text');
+    streaming = true;
+    document.getElementById('chat-send').disabled = true;
+
+    try {
+      const resp = await fetch('/channel/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ message: text, conversation_id: convId, user_id: userId }),
+      });
+
+      if (!resp.ok) { textEl.textContent = 'Error — please try again.'; return; }
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let currentEvent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (currentEvent === 'token') {
+              textEl.textContent += data;
+              document.getElementById('chat-messages').scrollTop = 99999;
+            } else if (currentEvent === 'init') {
+              try { const p = JSON.parse(data); if (p.conversation_id) convId = p.conversation_id; } catch {}
+            } else if (currentEvent === 'done') {
+              if (data) convId = data;
+            }
+            currentEvent = '';
+          }
+        }
+      }
+    } catch { textEl.textContent = 'Connection error.'; }
+    finally {
+      aEl.classList.remove('streaming');
+      streaming = false;
+      document.getElementById('chat-send').disabled = false;
+    }
+  }
+
+  document.getElementById('chat-send').addEventListener('click', sendMessage);
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  // ── Devices ────────────────────────────────────────────────────────
+  const ON_STATES  = new Set(['on', 'heat', 'cool', 'auto', 'fan_only', 'dry', 'unlocked']);
+  const OFF_STATES = new Set(['off', 'locked', 'unavailable', 'unknown']);
+
+  async function loadDevices() {
+    const list = document.getElementById('devices-list');
+    list.innerHTML = '<p class="loading">Loading...</p>';
+    const resp = await apiFetch('/api/devices');
+    if (!resp) return;
+    if (!resp.ok) { list.innerHTML = '<p class="loading">Failed to load devices.</p>'; return; }
+    const { devices } = await resp.json();
+    if (!devices.length) { list.innerHTML = '<p class="loading">No devices available.</p>'; return; }
+    list.innerHTML = '';
+    devices.forEach(d => list.appendChild(buildDeviceCard(d)));
+  }
+
+  function buildDeviceCard(d) {
+    const isOn   = ON_STATES.has(d.state);
+    const card   = document.createElement('div');
+    card.className = `device-card ${isOn ? 'on' : ''}`;
+    card.dataset.entityId = d.entity_id;
+
+    const name   = document.createElement('div');
+    name.className = 'device-name';
+    name.textContent = d.friendly_name;
+
+    const state  = document.createElement('div');
+    state.className = `device-state ${isOn ? 'on' : ''}`;
+    state.textContent = d.state;
+
+    const toggle = document.createElement('button');
+    toggle.className = 'toggle-btn';
+    toggle.textContent = isOn ? 'Turn off' : 'Turn on';
+    toggle.addEventListener('click', () => toggleDevice(d, card, state, toggle));
+
+    card.appendChild(name);
+    card.appendChild(state);
+
+    // brightness control for lights
+    if (d.domain === 'light' && d.brightness != null) {
+      const row   = document.createElement('div');
+      row.className = 'brightness-row';
+      const slider = document.createElement('input');
+      slider.type  = 'range';
+      slider.min   = 0;
+      slider.max   = 255;
+      slider.value = d.brightness;
+      const val    = document.createElement('span');
+      val.className = 'brightness-val';
+      val.textContent = Math.round(d.brightness / 255 * 100) + '%';
+      slider.addEventListener('change', () => {
+        val.textContent = Math.round(slider.value / 255 * 100) + '%';
+        apiFetch(`/api/devices/${d.entity_id}`, {
+          method: 'POST',
+          body: JSON.stringify({ service: 'turn_on', service_data: { brightness: parseInt(slider.value) } }),
+        });
+      });
+      slider.addEventListener('input', () => {
+        val.textContent = Math.round(slider.value / 255 * 100) + '%';
+      });
+      row.appendChild(slider);
+      row.appendChild(val);
+      card.appendChild(row);
+    }
+
+    card.appendChild(toggle);
+    return card;
+  }
+
+  async function toggleDevice(d, card, stateEl, btn) {
+    const isOn   = ON_STATES.has(d.state);
+    const service = isOn ? 'turn_off' : 'turn_on';
+    btn.disabled = true;
+    const resp = await apiFetch(`/api/devices/${d.entity_id}`, {
+      method: 'POST',
+      body: JSON.stringify({ service }),
+    });
+    btn.disabled = false;
+    if (!resp || !resp.ok) return;
+    // optimistic update
+    d.state = isOn ? 'off' : 'on';
+    const nowOn = !isOn;
+    card.classList.toggle('on', nowOn);
+    stateEl.classList.toggle('on', nowOn);
+    stateEl.textContent = d.state;
+    btn.textContent = nowOn ? 'Turn off' : 'Turn on';
+  }
+
+  // ── Admin ──────────────────────────────────────────────────────────
+
+  function setAdminStatus(elId, msg, kind) {
+    const el = document.getElementById(elId);
+    el.textContent = msg;
+    el.className = 'section-status' + (kind ? ' ' + kind : '');
+    if (msg) setTimeout(() => { el.textContent = ''; el.className = 'section-status'; }, 4000);
+  }
+
+  // Health card
+  async function loadAdminHealth() {
+    const card = document.getElementById('admin-health-card');
+    const resp = await apiFetch('/health');
+    if (!resp || !resp.ok) { card.innerHTML = '<p class="loading" style="padding:4px 0;">Failed to load.</p>'; return; }
+    const d = await resp.json();
+    card.innerHTML = `
+      <div class="info-row"><span class="key">Version</span><span class="val">${d.version}</span></div>
+      <div class="info-row"><span class="key">LLM</span><span class="val ${d.llm_running ? 'ok' : 'err'}">${d.llm_running ? '● Running' : '● Stopped'}${d.llm_pid ? '  PID ' + d.llm_pid : ''}</span></div>
+      <div class="info-row"><span class="key">Broadcast</span><span class="val">${d.broadcast ? 'enabled' : 'disabled'}</span></div>
+      <div class="info-row"><span class="key">Providers</span><span class="val">${(d.providers || []).join(', ')}</span></div>
+      <div class="info-row"><span class="key">As of</span><span class="val" style="color:var(--text-dim);font-size:11px;">${d.timestamp ? d.timestamp.replace('T',' ').slice(0,19) : '—'}</span></div>
+    `;
+  }
+
+  // Slots table
+  async function loadAdminSlots() {
+    const card = document.getElementById('admin-slots-card');
+    const resp = await apiFetch('/slots');
+    if (!resp || !resp.ok) { card.innerHTML = '<p class="loading" style="padding:12px 14px;">Failed to load.</p>'; return; }
+    const { slots: slotData } = await resp.json();
+    const users = Object.entries(slotData).filter(([uid]) => uid !== 'utility');
+
+    // Populate dump user select while we have the list
+    const sel = document.getElementById('admin-dump-user');
+    const prevVal = sel.value;
+    sel.innerHTML = '';
+    users.forEach(([uid]) => {
+      const opt = document.createElement('option');
+      opt.value = uid;
+      opt.textContent = uid;
+      if (uid === prevVal) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    let rows = users.map(([uid, u]) => `
+      <tr>
+        <td>${uid}</td>
+        <td style="text-align:center;">${u.slot}</td>
+        <td style="text-align:center;">${u.security}</td>
+        <td style="text-align:center;">${u.history_len}</td>
+        <td style="text-align:center;" class="${u.is_idle ? 'dot-dim' : 'dot-ok'}">${u.is_idle ? '—' : '●'}</td>
+        <td style="text-align:center;" class="${u.has_summary ? 'dot-ok' : 'dot-dim'}">${u.has_summary ? '●' : '—'}</td>
+      </tr>`).join('');
+
+    card.innerHTML = `
+      <table class="slots-table">
+        <thead><tr>
+          <th>User</th><th>Slot</th><th>Sec</th><th>Hist</th><th>Active</th><th>Summary</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  document.getElementById('admin-health-refresh').addEventListener('click', () => {
+    loadAdminHealth();
+    loadAdminSlots();
+  });
+
+  // Prompt dump
+  document.getElementById('admin-dump-fetch').addEventListener('click', async () => {
+    const uid = document.getElementById('admin-dump-user').value;
+    const pre = document.getElementById('admin-dump-pre');
+    if (!uid) return;
+    setAdminStatus('admin-dump-status', 'Fetching...', '');
+    const resp = await apiFetch(`/admin/dump/${uid}`);
+    if (!resp || !resp.ok) { setAdminStatus('admin-dump-status', 'Error — check logs.', 'err'); return; }
+    const data = await resp.json();
+    pre.textContent = JSON.stringify(data, null, 2);
+    pre.style.display = 'block';
+    setAdminStatus('admin-dump-status', '', '');
+  });
+
+  // Controls — LLM restart with two-click confirm
+  let llmRestartArmed = false;
+  let llmRestartTimer = null;
+  document.getElementById('admin-llm-restart').addEventListener('click', async () => {
+    const btn = document.getElementById('admin-llm-restart');
+    if (!llmRestartArmed) {
+      llmRestartArmed = true;
+      btn.classList.add('confirm');
+      btn.textContent = 'Click again to confirm restart';
+      llmRestartTimer = setTimeout(() => {
+        llmRestartArmed = false;
+        btn.classList.remove('confirm');
+        btn.textContent = 'Restart LLM server';
+      }, 3000);
+      return;
+    }
+    clearTimeout(llmRestartTimer);
+    llmRestartArmed = false;
+    btn.classList.remove('confirm');
+    btn.textContent = 'Restart LLM server';
+    setAdminStatus('admin-controls-status', 'Restarting...', '');
+    const resp = await apiFetch('/llm/restart', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+    setAdminStatus('admin-controls-status', resp && resp.ok ? 'LLM restart triggered.' : 'Error — check logs.', resp && resp.ok ? 'ok' : 'err');
+  });
+
+  document.getElementById('admin-rag-ingest').addEventListener('click', async () => {
+    setAdminStatus('admin-controls-status', 'Starting ingest...', '');
+    const resp = await apiFetch('/admin/rag/ingest', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+    setAdminStatus('admin-controls-status', resp && resp.ok ? 'RAG ingest started.' : 'Error — check logs.', resp && resp.ok ? 'ok' : 'err');
+  });
+
+  document.getElementById('admin-entity-refresh').addEventListener('click', async () => {
+    setAdminStatus('admin-controls-status', 'Refreshing...', '');
+    const resp = await apiFetch('/admin/entity-index/refresh', { method: 'POST', body: JSON.stringify({ user_id: userId }) });
+    setAdminStatus('admin-controls-status', resp && resp.ok ? 'Entity index cleared.' : 'Error — check logs.', resp && resp.ok ? 'ok' : 'err');
+  });
+
+  // ── Notifications ──────────────────────────────────────────────────
+  let notifOpen     = false;
+  let notifPollTimer = null;
+
+  function timeAgo(isoStr) {
+    if (!isoStr) return '';
+    const diff = Math.floor((Date.now() - new Date(isoStr + 'Z').getTime()) / 1000);
+    if (diff < 60)   return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  function buildNotifItem(n) {
+    const isUnread = !n.read_at;
+    const item     = document.createElement('div');
+    item.className = `notif-item${isUnread ? ' unread' : ''}`;
+    item.dataset.id = n.id;
+
+    const top = document.createElement('div');
+    top.className = 'notif-item-top';
+
+    const sev = document.createElement('span');
+    sev.className = `notif-severity ${n.severity}`;
+    sev.textContent = n.severity;
+
+    const msg = document.createElement('span');
+    msg.className = 'notif-message';
+    msg.textContent = n.message;
+
+    top.appendChild(sev);
+    top.appendChild(msg);
+
+    const meta = document.createElement('div');
+    meta.className = 'notif-meta';
+
+    const time = document.createElement('span');
+    time.className = 'notif-time';
+    time.textContent = timeAgo(n.created_at);
+
+    const actions = document.createElement('div');
+    actions.className = 'notif-actions';
+
+    if (isUnread) {
+      const readBtn = document.createElement('button');
+      readBtn.className = 'notif-action-btn';
+      readBtn.textContent = 'Dismiss';
+      readBtn.addEventListener('click', async () => {
+        await apiFetch(`/notifications/${n.id}/read`, { method: 'POST' });
+        item.classList.remove('unread');
+        readBtn.remove();
+        refreshNotifBadge();
+      });
+      actions.appendChild(readBtn);
+    }
+
+    // snooze only for ADMIN
+    if (securityLevel >= 4) {
+      const snoozeBtn = document.createElement('button');
+      snoozeBtn.className = 'notif-action-btn';
+      snoozeBtn.textContent = 'Snooze';
+
+      const snoozeMenu = document.createElement('div');
+      snoozeMenu.className = 'snooze-menu';
+
+      for (const h of [1, 4, 24]) {
+        const opt = document.createElement('button');
+        opt.className = 'notif-action-btn';
+        opt.textContent = `${h}h`;
+        opt.addEventListener('click', async () => {
+          await apiFetch(`/notifications/${n.id}/snooze`, {
+            method: 'POST',
+            body: JSON.stringify({ hours: h }),
+          });
+          item.classList.remove('unread');
+          snoozeMenu.classList.remove('open');
+          refreshNotifBadge();
+        });
+        snoozeMenu.appendChild(opt);
+      }
+
+      snoozeBtn.addEventListener('click', () => snoozeMenu.classList.toggle('open'));
+      actions.appendChild(snoozeBtn);
+      actions.appendChild(snoozeMenu);
+    }
+
+    meta.appendChild(time);
+    meta.appendChild(actions);
+
+    item.appendChild(top);
+    item.appendChild(meta);
+    return item;
+  }
+
+  async function loadNotifications() {
+    const resp = await apiFetch('/notifications');
+    if (!resp || !resp.ok) return;
+    const { notifications: items, unread_count } = await resp.json();
+
+    // update badge
+    const badge = document.getElementById('notif-badge');
+    const bell  = document.getElementById('notif-bell');
+    if (unread_count > 0) {
+      badge.textContent = unread_count;
+      badge.style.display = '';
+      bell.classList.add('has-unread');
+    } else {
+      badge.style.display = 'none';
+      bell.classList.remove('has-unread');
+    }
+
+    // update panel if open
+    if (notifOpen) {
+      const list = document.getElementById('notif-list');
+      const title = document.getElementById('notif-panel-title');
+      title.textContent = unread_count > 0 ? `Alerts (${unread_count} unread)` : 'Alerts';
+      if (!items.length) {
+        list.innerHTML = '<div class="notif-empty">No alerts.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      items.forEach(n => list.appendChild(buildNotifItem(n)));
+    }
+  }
+
+  function refreshNotifBadge() {
+    loadNotifications();
+  }
+
+  function startNotifPoll() {
+    if (notifPollTimer) return;
+    loadNotifications();
+    notifPollTimer = setInterval(loadNotifications, 60000);
+  }
+
+  function stopNotifPoll() {
+    clearInterval(notifPollTimer);
+    notifPollTimer = null;
+  }
+
+  // Bell toggle
+  document.getElementById('notif-bell').addEventListener('click', async () => {
+    const panel = document.getElementById('notif-panel');
+    notifOpen = !notifOpen;
+    panel.style.display = notifOpen ? 'flex' : 'none';
+    if (notifOpen) await loadNotifications();
+  });
+
+  // Close panel on outside click
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('notif-wrap');
+    if (notifOpen && !wrap.contains(e.target)) {
+      document.getElementById('notif-panel').style.display = 'none';
+      notifOpen = false;
+    }
+  });
+
+  // Mark all read
+  document.getElementById('notif-read-all').addEventListener('click', async () => {
+    await apiFetch('/notifications/read-all', { method: 'POST' });
+    await loadNotifications();
+  });
+
+  // ── Workouts ───────────────────────────────────────────────────────
+  let wkExList    = [];   // [{id, name, category, muscle_group, equipment}]
+  let wkInitDone  = false;
+  let wkExercises = [];   // blocks currently in the log form
+
+  async function initWorkouts() {
+    if (!wkInitDone) {
+      // set today's date
+      const today = new Date().toISOString().slice(0, 10);
+      document.getElementById('wk-date').value = today;
+
+      // load exercise library
+      const resp = await apiFetch('/api/workouts/exercises');
+      if (resp && resp.ok) {
+        const d = await resp.json();
+        wkExList = d.exercises || [];
+        const dl = document.getElementById('wk-ex-datalist');
+        dl.innerHTML = '';
+        wkExList.forEach(ex => {
+          const opt = document.createElement('option');
+          opt.value = ex.name;
+          dl.appendChild(opt);
+        });
+      }
+
+      // sub-nav wiring
+      document.querySelectorAll('.wk-subnav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.wk-subnav-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const view = btn.dataset.wkview;
+          document.getElementById('wk-log-view').style.display    = view === 'log'     ? '' : 'none';
+          document.getElementById('wk-history-view').style.display = view === 'history' ? '' : 'none';
+          if (view === 'history') loadWorkoutHistory();
+        });
+      });
+
+      // add exercise button
+      document.getElementById('wk-add-ex-btn').addEventListener('click', () => {
+        const input = document.getElementById('wk-ex-search');
+        const name  = input.value.trim();
+        if (!name) return;
+        const ex = wkExList.find(e => e.name.toLowerCase() === name.toLowerCase());
+        if (ex) {
+          addExerciseBlock(ex);
+        } else {
+          // custom exercise — add to library then block
+          addCustomExercise(name);
+        }
+        input.value = '';
+      });
+
+      document.getElementById('wk-ex-search').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('wk-add-ex-btn').click();
+      });
+
+      // save button
+      document.getElementById('wk-save-btn').addEventListener('click', saveWorkout);
+
+      wkInitDone = true;
+    }
+  }
+
+  function addExerciseBlock(ex) {
+    const container = document.getElementById('wk-exercises');
+    const isCardio  = ex.category === 'cardio';
+
+    const block = document.createElement('div');
+    block.className = 'wk-ex-block';
+    block.dataset.exId       = ex.id;
+    block.dataset.exCategory = ex.category;
+    block.dataset.setCount   = '0';
+
+    const header = document.createElement('div');
+    header.className = 'wk-ex-header';
+    header.innerHTML = `<span class="wk-ex-name">${ex.name}</span><button class="wk-ex-remove" title="Remove exercise">&times;</button>`;
+    header.querySelector('.wk-ex-remove').addEventListener('click', () => block.remove());
+
+    const table = document.createElement('table');
+    table.className = 'wk-sets-table';
+    const thead = document.createElement('thead');
+    if (isCardio) {
+      thead.innerHTML = '<tr><th>#</th><th>Min</th><th>Dist (m)</th><th></th></tr>';
+    } else {
+      thead.innerHTML = '<tr><th>#</th><th>Reps</th><th>lbs</th><th></th></tr>';
+    }
+    const tbody = document.createElement('tbody');
+    table.appendChild(thead);
+    table.appendChild(tbody);
+
+    const addSetRow = document.createElement('div');
+    addSetRow.className = 'wk-add-set-row';
+    const addSetBtn = document.createElement('button');
+    addSetBtn.className = 'wk-btn-sm';
+    addSetBtn.textContent = '+ Set';
+    addSetBtn.addEventListener('click', () => appendSetRow(block, tbody, isCardio));
+    addSetRow.appendChild(addSetBtn);
+
+    block.appendChild(header);
+    block.appendChild(table);
+    block.appendChild(addSetRow);
+    container.appendChild(block);
+
+    // auto-add first set
+    appendSetRow(block, tbody, isCardio);
+  }
+
+  function appendSetRow(block, tbody, isCardio) {
+    const n = parseInt(block.dataset.setCount, 10) + 1;
+    block.dataset.setCount = n;
+
+    const tr = document.createElement('tr');
+    tr.dataset.setNum = n;
+
+    const numTd = document.createElement('td');
+    numTd.textContent = n;
+
+    const rmTd = document.createElement('td');
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'wk-set-remove';
+    rmBtn.textContent = '×';
+    rmBtn.addEventListener('click', () => tr.remove());
+    rmTd.appendChild(rmBtn);
+
+    if (isCardio) {
+      const durTd  = document.createElement('td');
+      const distTd = document.createElement('td');
+      const durIn  = document.createElement('input');
+      const distIn = document.createElement('input');
+      durIn.className  = 'wk-set-input';
+      distIn.className = 'wk-set-input';
+      durIn.type  = 'number'; durIn.min = '0'; durIn.placeholder = '—';
+      distIn.type = 'number'; distIn.min = '0'; distIn.placeholder = '—';
+      durIn.dataset.field  = 'duration';
+      distIn.dataset.field = 'distance';
+      durTd.appendChild(durIn);
+      distTd.appendChild(distIn);
+      tr.appendChild(numTd); tr.appendChild(durTd); tr.appendChild(distTd); tr.appendChild(rmTd);
+    } else {
+      const repsTd   = document.createElement('td');
+      const weightTd = document.createElement('td');
+      const repsIn   = document.createElement('input');
+      const weightIn = document.createElement('input');
+      repsIn.className   = 'wk-set-input';
+      weightIn.className = 'wk-set-input';
+      repsIn.type   = 'number'; repsIn.min = '0'; repsIn.placeholder = '—';
+      weightIn.type = 'number'; weightIn.min = '0'; weightIn.step = '2.5'; weightIn.placeholder = '—';
+      repsIn.dataset.field   = 'reps';
+      weightIn.dataset.field = 'weight';
+      repsTd.appendChild(repsIn);
+      weightTd.appendChild(weightIn);
+      tr.appendChild(numTd); tr.appendChild(repsTd); tr.appendChild(weightTd); tr.appendChild(rmTd);
+    }
+
+    tbody.appendChild(tr);
+    // focus reps/duration input in new row
+    const firstIn = tr.querySelector('input');
+    if (firstIn) firstIn.focus();
+  }
+
+  async function addCustomExercise(name) {
+    const payload = { name, category: 'strength', muscle_group: null, equipment: null };
+    const resp = await apiFetch('/api/workouts/exercises', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (!resp) return;
+    let ex;
+    if (resp.status === 409) {
+      const d = await resp.json();
+      ex = wkExList.find(e => e.id === d.id) || { id: d.id, name, category: 'strength', muscle_group: null, equipment: null };
+    } else if (resp.ok) {
+      ex = await resp.json();
+      wkExList.push(ex);
+      const opt = document.createElement('option');
+      opt.value = ex.name;
+      document.getElementById('wk-ex-datalist').appendChild(opt);
+    } else { return; }
+    addExerciseBlock(ex);
+  }
+
+  async function saveWorkout() {
+    const btn    = document.getElementById('wk-save-btn');
+    const status = document.getElementById('wk-status');
+    const date   = document.getElementById('wk-date').value;
+    if (!date) { setWkStatus('Date is required.', 'err'); return; }
+
+    const blocks = document.querySelectorAll('#wk-exercises .wk-ex-block');
+    if (!blocks.length) { setWkStatus('Add at least one exercise.', 'err'); return; }
+
+    const sets = [];
+    let order  = 0;
+    let valid  = true;
+    blocks.forEach(block => {
+      const exId      = parseInt(block.dataset.exId, 10);
+      const isCardio  = block.dataset.exCategory === 'cardio';
+      block.querySelectorAll('tbody tr').forEach(tr => {
+        order++;
+        const fields = {};
+        tr.querySelectorAll('input[data-field]').forEach(inp => {
+          const v = inp.value.trim();
+          fields[inp.dataset.field] = v !== '' ? parseFloat(v) : null;
+        });
+        if (!isCardio && fields.reps == null && fields.weight == null) return; // skip blank rows
+        if (isCardio   && fields.duration == null && fields.distance == null) return;
+        sets.push({
+          exercise_id:  exId,
+          set_order:    order,
+          reps:         isCardio ? null : (fields.reps != null ? Math.round(fields.reps) : null),
+          weight:       isCardio ? null : fields.weight,
+          duration_sec: isCardio ? (fields.duration != null ? Math.round(fields.duration * 60) : null) : null,
+          distance_m:   isCardio ? fields.distance : null,
+        });
+      });
+    });
+
+    if (!sets.length) { setWkStatus('No sets to save.', 'err'); return; }
+
+    const payload = {
+      date,
+      name:         document.getElementById('wk-name').value.trim() || null,
+      duration_min: document.getElementById('wk-duration').value ? parseInt(document.getElementById('wk-duration').value) : null,
+      sets,
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    const resp = await apiFetch('/api/workouts/sessions', { method: 'POST', body: JSON.stringify(payload) });
+    btn.disabled = false;
+    btn.textContent = 'Save Workout';
+
+    if (resp && resp.ok) {
+      setWkStatus('Workout saved!', 'ok');
+      resetLogForm();
+    } else {
+      setWkStatus('Save failed.', 'err');
+    }
+  }
+
+  function resetLogForm() {
+    document.getElementById('wk-exercises').innerHTML = '';
+    document.getElementById('wk-name').value = '';
+    document.getElementById('wk-duration').value = '';
+    document.getElementById('wk-date').value = new Date().toISOString().slice(0, 10);
+    document.querySelectorAll('.wk-ex-block').forEach(b => { b.dataset.setCount = '0'; });
+  }
+
+  function setWkStatus(msg, kind) {
+    const el = document.getElementById('wk-status');
+    el.textContent = msg;
+    el.className = 'wk-status' + (kind ? ' ' + kind : '');
+    if (msg) setTimeout(() => { el.textContent = ''; el.className = 'wk-status'; }, 3500);
+  }
+
+  async function loadWorkoutHistory() {
+    const list = document.getElementById('wk-history-list');
+    list.innerHTML = '<p class="wk-empty">Loading…</p>';
+    const resp = await apiFetch('/api/workouts/sessions');
+    if (!resp || !resp.ok) { list.innerHTML = '<p class="wk-empty">Failed to load.</p>'; return; }
+    const d = await resp.json();
+    const sessions = d.sessions || [];
+    if (!sessions.length) { list.innerHTML = '<p class="wk-empty">No workouts logged yet.</p>'; return; }
+    list.innerHTML = '';
+    sessions.forEach(s => list.appendChild(buildSessionCard(s)));
+  }
+
+  function buildSessionCard(s) {
+    const card = document.createElement('div');
+    card.className = 'wk-session-card';
+
+    const dateStr = s.date.slice(0, 10);
+    const vol     = s.total_volume > 0 ? Math.round(s.total_volume).toLocaleString() + ' lbs total' : '';
+    const dur     = s.duration_min ? s.duration_min + ' min' : '';
+
+    card.innerHTML = `
+      <div class="wk-session-date">${dateStr}${dur ? '  ·  ' + dur : ''}</div>
+      <div class="wk-session-name">${s.name || 'Workout'}</div>
+      <div class="wk-session-meta">
+        <div>${s.exercise_count} exercise${s.exercise_count !== 1 ? 's' : ''} &nbsp; <span>${s.set_count}</span> sets</div>
+        ${vol ? `<div>${vol}</div>` : ''}
+      </div>
+    `;
+
+    let detailEl = null;
+    card.addEventListener('click', async () => {
+      if (detailEl) { detailEl.remove(); detailEl = null; return; }
+      const resp = await apiFetch(`/api/workouts/sessions/${s.id}`);
+      if (!resp || !resp.ok) return;
+      const data = await resp.json();
+      detailEl = buildSessionDetail(data.sets);
+      card.appendChild(detailEl);
+    });
+
+    return card;
+  }
+
+  function buildSessionDetail(sets) {
+    const el = document.createElement('div');
+    el.className = 'wk-session-detail';
+
+    // group sets by exercise
+    const byEx = {};
+    sets.forEach(s => {
+      if (!byEx[s.exercise_name]) byEx[s.exercise_name] = [];
+      byEx[s.exercise_name].push(s);
+    });
+
+    Object.entries(byEx).forEach(([exName, exSets]) => {
+      const exDiv = document.createElement('div');
+      exDiv.className = 'wk-detail-ex';
+      const nameEl = document.createElement('div');
+      nameEl.className = 'wk-detail-ex-name';
+      nameEl.textContent = exName;
+      const chipsEl = document.createElement('div');
+      chipsEl.className = 'wk-detail-sets';
+      exSets.forEach((s, i) => {
+        const chip = document.createElement('div');
+        chip.className = 'wk-detail-set-chip';
+        if (s.category === 'cardio') {
+          const dur  = s.duration_sec ? Math.round(s.duration_sec / 60) + 'min' : '';
+          const dist = s.distance_m   ? s.distance_m + 'm' : '';
+          chip.textContent = [dur, dist].filter(Boolean).join(' · ') || `Set ${i + 1}`;
+        } else {
+          const reps   = s.reps   != null ? s.reps + ' reps' : '';
+          const weight = s.weight != null ? s.weight + ' lbs' : '';
+          chip.textContent = [reps, weight].filter(Boolean).join(' @ ') || `Set ${i + 1}`;
+        }
+        chipsEl.appendChild(chip);
+      });
+      exDiv.appendChild(nameEl);
+      exDiv.appendChild(chipsEl);
+      el.appendChild(exDiv);
+    });
+
+    return el;
+  }
+
+  // Wire into showApp / doLogout
+  const _origShowApp = showApp;
+  // patch showApp to start polling after login
+  const _patchedShowApp = showApp;
+  document.addEventListener('DOMContentLoaded', () => {
+    if (token) startNotifPoll();
+  });
+
+  // start polling on login (patch login handler via MutationObserver on #app visibility)
+  const _appEl = document.getElementById('app');
+  new MutationObserver(() => {
+    if (_appEl.style.display !== 'none' && _appEl.style.display !== '') startNotifPoll();
+    else stopNotifPoll();
+  }).observe(_appEl, { attributes: true, attributeFilter: ['style'] });
+</script>
+</body>
+</html>

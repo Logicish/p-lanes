@@ -35,86 +35,62 @@
 import structlog
 
 import providers
-from core.events import register
 from core.pipeline import PipelineContext
-from providers.rag.provider import ALL_SHARED_COLLECTIONS
+from core.tool_registry import tool
+
+try:
+    from providers.rag.provider import ALL_SHARED_COLLECTIONS
+except ImportError:
+    ALL_SHARED_COLLECTIONS = [
+        "shared_home", "shared_cooking", "shared_electronics",
+        "shared_games", "shared_general",
+    ]
 
 log = structlog.get_logger()
 
-# Intents that should receive RAG enrichment.
-# Empty string covers messages that fell through classification.
-# local_search gets RAG first — web_search falls back if RAG is empty.
-_RAG_INTENTS = {"general", "", "local_search"}
 
-
-# ==================================================
-# Enricher
-# ==================================================
-
-@register("rag_enricher", "enricher")
-async def handle(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent not in _RAG_INTENTS:
-        return ctx
+@tool("local_search")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
+    query = (args.get("query") or ctx.raw_message).strip()
 
     rag = providers.get_provider("rag")
     if rag is None or not rag.is_ready:
-        return ctx
+        return "Local knowledge base is unavailable right now."
 
     embedder = providers.get_embedder()
     if embedder is None or not embedder.is_ready:
-        return ctx
+        return "Embedding service is unavailable right now."
 
-    # Determine which collections this user can search (#15: collection routing)
     routing     = rag.collection_routing
-    shared_cols = routing.get(ctx.intent, ALL_SHARED_COLLECTIONS)
-    user_col    = f"user_{ctx.user.user_id}"
-    col_names   = shared_cols + [user_col]
+    shared_cols = routing.get("local_search", ALL_SHARED_COLLECTIONS)
+    col_names   = shared_cols + [f"user_{ctx.user.user_id}"]
 
     try:
-        vecs = await embedder.embed_async([ctx.raw_message])
+        vecs      = await embedder.embed_async([query])
         query_vec = vecs[0].tolist()
-
-        results = await rag.search(query_vec, col_names)
-        if not results:
-            return ctx
-
-        # #13: drop results that don't meet the absolute distance threshold
-        threshold = rag.distance_threshold
-        results = [r for r in results if r["distance"] < threshold]
-        if not results:
-            log.debug("rag_all_below_threshold",
-                      user_id=ctx.user.user_id,
-                      threshold=threshold)
-            return ctx
-
-        # #16: drop results more than 1.5x the best match distance
-        best    = results[0]["distance"]
-        results = [r for r in results if r["distance"] < best * 1.5]
-
-        # Format results into a context block for the LLM
-        lines = []
-        for r in results:
-            src     = r["source_file"]
-            section = r["section"]
-            doc     = r["doc"]
-            label   = f"{src} — {section}" if section else src
-            lines.append(f"[{label}]\n{doc}")
-
-        content = "\n\n".join(lines)
-        # #14: label tells the LLM this context is optional
-        ctx.enrichments.append({
-            "source":  "knowledge base — use only if relevant to the question",
-            "content": content,
-        })
-
-        log.debug("rag_enriched",
-                  user_id=ctx.user.user_id,
-                  results=len(results),
-                  best_distance=round(best, 4),
-                  threshold=threshold,
-                  intent=ctx.intent)
-
+        results   = await rag.search(query_vec, col_names)
     except Exception as e:
-        log.error("rag_enricher_failed", user_id=ctx.user.user_id, error=str(e))
+        log.error("local_search_tool_failed", error=str(e))
+        return "Search failed — try again."
 
-    return ctx
+    if not results:
+        return "Nothing found in the local knowledge base for that query."
+
+    threshold = rag.distance_threshold
+    results = [r for r in results if r["distance"] < threshold]
+    if not results:
+        return "Nothing relevant found in the local knowledge base."
+
+    best    = results[0]["distance"]
+    results = [r for r in results if r["distance"] < best * 1.5]
+
+    lines = []
+    for r in results:
+        src     = r["source_file"]
+        section = r["section"]
+        doc     = r["doc"]
+        label   = f"{src} — {section}" if section else src
+        lines.append(f"[{label}]\n{doc}")
+
+    log.info("local_search_tool_ok", results=len(results), query_preview=query[:60])
+    return "\n\n".join(lines)

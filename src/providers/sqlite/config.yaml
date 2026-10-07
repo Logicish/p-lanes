@@ -1,4 +1,8 @@
 # providers/sqlite/config.yaml
 
 enabled: true
-db_path: "/var/lib/p-lanes/db/p-lanes.db"
+system_db_path:  "/var/lib/p-lanes/db/system.db"
+house_db_path:   "/var/lib/p-lanes/db/house.db"
+games_db_path:   "/var/lib/p-lanes/db/games.db"
+recipes_db_path: "/var/lib/p-lanes/db/recipes.db"
+finance_db_path: "/var/lib/p-lanes/db/finance.db"

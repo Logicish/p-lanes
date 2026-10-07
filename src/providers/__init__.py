@@ -79,13 +79,12 @@ def get_embedder() -> "EmbeddingProvider | None":
     return None
 
 
-def get_db() -> "SqliteProvider | None":
-    """Return the registered SQLite provider, or None."""
-    from providers.sqlite.provider import SqliteProvider
-    for p in _providers.values():
-        if isinstance(p, SqliteProvider):
-            return p
-    return None
+def get_db(name: str) -> "SqliteProvider | None":
+    """Return a named SQLite provider, or None.
+
+    name is 'system' or a user_id (e.g. 'root', 'marilyn').
+    """
+    return _providers.get(f"sqlite:{name}")
 
 
 def get_all() -> dict[str, "Provider"]:

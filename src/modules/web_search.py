@@ -35,8 +35,8 @@ import httpx
 import structlog
 import yaml
 
-from core.events import register
 from core.pipeline import PipelineContext
+from core.tool_registry import tool
 
 log = structlog.get_logger()
 
@@ -58,6 +58,17 @@ def _load_config() -> dict:
 _CFG = _load_config()
 
 _SEARXNG_URL          = _CFG.get("searxng_url",          "http://127.0.0.1:8888/search")
+
+
+def _load_home_location() -> str:
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("home", {}).get("location", "")
+    except Exception:
+        return ""
+
+_HOME_LOCATION = _load_home_location()
 _RESULT_COUNT         = _CFG.get("result_count",         5)
 _TIMEOUT              = _CFG.get("timeout",              8)
 _JINA_ENABLED         = _CFG.get("jina_enabled",         True)
@@ -84,41 +95,30 @@ def _get_jina_headers() -> dict:
 # Enricher
 # ==================================================
 
-@register("web_search", "enricher")
-async def handle(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent not in ("web_search", "local_search"):
-        return ctx
 
-    # local_search: RAG runs first (priority 30, we're 50).
-    # If RAG already produced enrichments, trust local knowledge — skip web.
-    if ctx.intent == "local_search":
-        rag_hit = any(
-            "knowledge base" in e.get("source", "")
-            for e in ctx.enrichments
-        )
-        if rag_hit:
-            log.info("web_search_skipped_rag_hit", user_id=ctx.user.user_id)
-            return ctx
 
-    query = ctx.raw_message.strip()
+@tool("web_search")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
+    query = args.get("query") or ctx.raw_message.strip()
     if not query:
-        return ctx
+        return "No search query provided."
+
+    if args.get("location_context") and _HOME_LOCATION:
+        query = f"{query} in {_HOME_LOCATION}"
+        log.debug("web_search_tool_location_injected", location=_HOME_LOCATION)
 
     try:
         results = await _search(query)
     except Exception as e:
-        log.warning("web_search_failed", user_id=ctx.user.user_id, error=str(e))
-        return ctx
+        log.warning("web_search_tool_failed", error=str(e))
+        return "Web search failed — try again in a moment."
 
     if not results:
-        log.debug("web_search_no_results", user_id=ctx.user.user_id)
-        return ctx
+        return "No results found for that query."
 
-    # Optionally enrich thin snippets with full-page content
     if _JINA_ENABLED:
         results = await _enrich_thin_snippets(results)
 
-    # Format into a context block
     lines = []
     for r in results:
         title   = r.get("title", "").strip()
@@ -127,17 +127,8 @@ async def handle(ctx: PipelineContext) -> PipelineContext:
         header  = f"[{title}]({url})" if title else url
         lines.append(f"{header}\n{content}")
 
-    ctx.enrichments.append({
-        "source":  "web search results",
-        "content": "\n\n".join(lines),
-    })
-
-    log.info("web_search_enriched",
-             user_id=ctx.user.user_id,
-             results=len(results),
-             query_preview=query[:60])
-
-    return ctx
+    log.info("web_search_tool_ok", results=len(results), query_preview=query[:60])
+    return "\n\n".join(lines)
 
 
 # ==================================================

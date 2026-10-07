@@ -1,147 +1,401 @@
 # modules/intents.yaml
 #
-# Semantic intent buckets for the embedding classifier.
-# Each bucket needs 5-10 example phrases that clearly
-# represent the intent. More examples = tighter cluster.
+# Embedding buckets for the semantic router.
 #
-# Rules:
-#   - Keep examples natural — write how users actually speak
-#   - Avoid overlap between buckets (shared vocabulary = bleed)
-#   - The outside_weather / ha_sensor pair needs the most
-#     differentiation — lean on inside/outside signal words
+# v0.7.0 — expanded from 4 to 14 intents. Embedding is now the
+# primary routing mechanism for ALL intents. The tier-1 keyword
+# table in semantic_router.py is being phased out in favour of
+# these buckets.
 #
-# confidence_threshold: minimum cosine similarity to accept
-#   a classification. Below this → routes to "general" (LLM).
-#   Start at 0.55 and tune up if you get false positives.
+# Thresholds (used by semantic_router.py v0.7.0):
+#   fast_path_threshold  — score >= this AND non-arg-extraction intent
+#                          → execute tool directly, bypass tool LLM
+#   tool_llm_threshold   — score >= this but < fast_path, OR arg-extraction
+#                          intent at any confidence → send to tool LLM
+#   below tool_llm_threshold → treat as general, no tools
+#
+# arg_extraction_intents — intents that always go to the tool LLM
+#   regardless of embedding confidence, because they require the LLM
+#   to extract structured parameters (entity, action, duration, etc.)
+#   from the message before execution.
+#
 # ==================================================
 
-confidence_threshold: 0.55    # minimum score to consider a classification
-confidence_required:  0.65    # minimum score for a definitive classification
-                               # scores between threshold and required → fall through to general
+fast_path_threshold: 0.82
+tool_llm_threshold:  0.60
 
-# Per-intent confidence overrides. Intents not listed use confidence_required above.
-# local_search is intentionally looser — RAG-first means a false positive is low risk.
+arg_extraction_intents:
+  - device_control
+  - timer_alarm
+  - media_control
+
+# Per-intent confidence overrides (minimum score to claim that intent).
+# 2026-10-07: tuned offline against ~800 labeled turns from the four test
+# banks + hand-written commands (offline router eval), weighting a
+# false trigger 1.5x a missed command. Chat about a topic (music, sleep,
+# phones) scores 0.60-0.72 on these buckets; real commands score higher.
 intent_confidence:
-  local_search: 0.60
+  device_control:  0.63
+  ha_sensor:       0.61
+  outside_weather: 0.65
+  timer_alarm:     0.71
+  media_control:   0.66
+  local_search:    0.62
+  verify_last:     0.63
+  system_status:   0.62
+  list_commands:   0.69
+  unsupported:     0.71
 
-# Per-intent temperature overrides applied at LLM call time.
-# Intents not listed use the user's profile default.
-# Retrieval/factual intents run low (0.2); conversational stay at user default.
-intent_temperatures:
-  ha_sensor:       0.2
-  outside_weather: 0.2
-  web_search:      0.2
-  local_search:    0.2
-  timer_alarm:     0.2
-  calendar:        0.2
-  device_control:  0.3
-  media_control:   0.3
+# Sampling profile (config.yaml sampling_profiles) per intent for the
+# conversational pass. main._pick_profile overrides at runtime:
+#   a tool ran → relay · intent disabled → feature_off · think w/o room → factual
+# Unlisted intents → chat. The tool LLM pass always uses the "router" profile.
+intent_profiles:
+  ha_sensor:       relay
+  device_control:  relay
+  outside_weather: relay
+  timer_alarm:     relay
+  media_control:   relay
+  add_note:        relay
+  web_search:      factual
+  local_search:    factual
+  verify_last:     factual
+  finance_process: factual
+  system_status:   factual
+  list_commands:   factual
+  clock:           factual
+  knowledge:       factual
+  chat_play:       chat
+  chat_statement:  chat
+  unsupported:     feature_off
+  general:         chat
+  think_mode:      think
 
 buckets:
 
+  # --------------------------------------------------
+  # HA sensor read — checking the state of home devices.
+  # Read-only. No action, no command verb.
+  # Contrast with device_control (write) and
+  # outside_weather (external weather service).
+  # --------------------------------------------------
+  ha_sensor:
+    - "is the office light on"
+    - "are the bedroom lights still on"
+    - "is the kitchen light on right now"
+    - "which lights are currently on"
+    - "are any lights left on"
+    - "is the front door locked"
+    - "is my door locked"
+    - "check if the back door is locked"
+    - "what's the status of the lock"
+    - "is the fan running"
+    - "what's the thermostat set to"
+    - "what temperature is the house set to"
+    - "is the ac on"
+    - "is the heater running"
+    - "what's the humidity inside"
+    - "is the motion sensor triggered"
+    - "are there any lights on in the house"
+    - "is the bedroom lamp still on"
+    - "check the office light for me"
+    - "what devices are on right now"
+    - "is anything left on in the kitchen"
+    - "what's the state of the living room light"
+    - "is my smart switch on"
+    - "what time is sunset"
+    - "when does the sun rise"
+    - "when does the sun go down tonight"
+    - "what time is sunrise tomorrow"
+    - "is the garage door open"
+    - "is the window open"
+    - "who is at the door"
+    - "is the dishwasher running"
+    - "is the laundry done"
+
+  # --------------------------------------------------
+  # Outside weather — current conditions and forecast
+  # from the weather service (not indoor sensors).
+  # --------------------------------------------------
+    - "how humid is it in the house"
+    - "what's the temperature inside"
+  outside_weather:
+    - "what's the weather like today"
+    - "how's the weather outside"
+    - "what's the temperature outside"
+    - "is it going to rain today"
+    - "will it rain tonight"
+    - "what's the forecast for this week"
+    - "how hot is it outside"
+    - "what are the conditions outside right now"
+    - "is it cold out"
+    - "do I need an umbrella today"
+    - "what's the humidity outside"
+    - "how windy is it today"
+    - "what's the weekend forecast"
+    - "will it be nice out tomorrow"
+    - "is it sunny outside"
+    - "what's the high temperature today"
+    - "should I wear a jacket"
+    - "what's it like outside right now"
+    - "any chance of rain this week"
+    - "is it a good day to be outside"
+    - "what's the weather going to be like"
+    - "give me the weather report"
+
+  # --------------------------------------------------
+  # Device control — write/action operations on home
+  # devices. Command verbs, state changes, adjustments.
+  # Always goes to tool LLM (arg extraction needed).
+  # --------------------------------------------------
+    - "how's it looking outside"
+    - "what's the uv index"
+    - "is it nice out"
   device_control:
-    - "turn on the lights"
-    - "turn off the lights"
-    - "turn on the kitchen lights"
-    - "turn off the bedroom light"
-    - "turn off the light in the master bedroom"
-    - "turn the living room lights off"
-    - "switch off the bathroom light"
-    - "turn on marilyn's lamp"
-    - "turn off marilyns light"
-    - "switch on jj's light"
-    - "make it brighter"
-    - "make it darker"
-    - "dim the lights"
-    - "dim the bedroom lights"
-    - "set the thermostat to 72"
-    - "turn the heat up"
-    - "turn the AC down"
-    - "make it look like moonlight in here"
-    - "change the lights to blue"
+    - "turn on the office light"
+    - "turn off the bedroom lamp"
+    - "switch off the kitchen lights"
+    - "dim the lights to 50 percent"
+    - "brighten the bedroom lamp"
+    - "make the lights brighter"
+    - "make it darker in here"
+    - "set the brightness to 30"
+    - "set the thermostat to 72 degrees"
+    - "set the heat to 70"
+    - "set the ac to 68"
     - "lock the front door"
     - "unlock the back door"
-    - "close the garage"
+    - "turn the fan on"
+    - "turn off the fan"
+    - "toggle the office light"
+    - "flip the bedroom switch"
+    - "change the light color to blue"
+    - "turn everything off in the office"
+    - "switch on the kitchen lights"
+    - "can you lock up"
+    - "turn on the lamp in the master bedroom"
+    - "kill the office lights"
+    - "lights off in the kitchen"
+    - "start the robot vacuum"
+    - "stop the vacuum"
+    - "turn on the coffee maker"
+    - "turn off the tv"
+    - "close the garage door"
+    - "turn on the security cameras"
+    - "set the color to warm white"
+    - "make the living room blue"
+    - "turn the hallway lights to 20 percent"
+    - "turn off everything"
 
-  ha_sensor:
-    - "is the bedroom lamp currently on"
-    - "check if the bedroom light is on"
-    - "is the living room light on right now"
-    - "what is the thermostat currently set to"
-    - "is the front door locked right now"
-    - "check the status of the garage door"
-    - "is the back door currently closed"
-    - "what's the current temperature inside"
-    - "how warm is it in here right now"
-    - "what's the indoor humidity right now"
-    - "which lights are currently on"
-    - "tell me what the bedroom light is doing"
-    - "are any lights on in the house right now"
-    - "what state is the front door lock in"
-    - "what's the indoor temperature right now"
+  # --------------------------------------------------
+  # Timer and alarm — setting countdowns and wake-ups.
+  # Always goes to tool LLM (duration parsing needed).
+  # --------------------------------------------------
+    - "arm the security system"
+    - "arm the house alarm"
+    - "disarm the alarm system"
+    - "lights on in the bedroom"
+    - "office lights off"
+    - "turn the air conditioning down"
+    - "cool it down in here"
+    - "warm it up in here"
+    - "shut everything down for the night"
+    - "open the blinds"
+    - "close the curtains in the bedroom"
+  timer_alarm:
+    - "set a timer for 30 minutes"
+    - "start a 10 minute timer"
+    - "give me a 5 minute timer"
+    - "put on a two hour timer"
+    - "set a quick 15 minute timer"
+    - "countdown timer for one hour"
+    - "wake me up in an hour"
+    - "wake me up in 30 minutes"
+    - "wake me up at 6:30"
+    - "set an alarm for 7 in the morning"
+    - "alarm for 8am"
+    - "remind me in 20 minutes"
+    - "remind me at 3pm"
+    - "set an alarm for tomorrow morning at 7"
+    - "45 minute timer please"
+    - "set me a timer for an hour and a half"
+    - "i need a timer for 90 seconds"
+    - "wake me up in half an hour"
 
-  outside_weather:
-    - "what's the weather like"
-    - "is it going to rain"
-    - "what's the temperature outside"
-    - "do I need an umbrella"
-    - "what's the forecast"
-    - "how cold is it outside"
-    - "is it sunny out"
-    - "what's the weather this week"
-    - "will it snow"
-    - "how hot is it today"
-    - "what's the weather outside right now"
-    - "is it raining out"
-    - "what's the wind like outside"
-    - "what's the weather forecast for tomorrow"
-    - "should I bring a jacket"
-    - "is it going to be hot today"
-    - "will it be cloudy"
-    - "what's the humidity outside"
-    - "is it a good day to go outside"
-
+  # --------------------------------------------------
+  # Media control — playback, volume, track control.
+  # Always goes to tool LLM (action interpretation needed).
+  # --------------------------------------------------
+    - "turn off my alarm"
+    - "stop the alarm"
+    - "snooze"
+    - "snooze the alarm"
+    - "cancel my alarm"
+    - "how much time is left"
   media_control:
     - "play some music"
+    - "play something upbeat"
     - "pause the music"
+    - "resume playback"
     - "stop the music"
-    - "next track"
     - "skip this song"
+    - "next track"
+    - "go back to the previous song"
     - "turn up the volume"
     - "turn down the volume"
-    - "play something"
-    - "previous song"
-    - "mute the speaker"
+    - "lower the volume a bit"
+    - "volume up"
+    - "mute the speakers"
+    - "unmute"
+    - "put on something relaxing"
+    - "can you play something in the kitchen"
+    - "increase the volume by a lot"
+    - "skip to the next track"
 
-  timer_alarm:
-    - "set a timer for 10 minutes"
-    - "remind me in 5 minutes"
-    - "set a 30 second timer"
-    - "timer for 1 hour"
-    - "set a pasta timer for 12 minutes"
-    - "give me 20 minutes"
-    - "wake me up in an hour"
-    - "set an alarm for 15 minutes"
-    - "countdown 45 seconds"
-    - "remind me in half an hour"
+  # --------------------------------------------------
+  # Add note — explicit note/fact saving commands.
+  # The command trigger phrase is part of the message.
+  # Contrast with general (no saving intent).
+  # --------------------------------------------------
+    - "open netflix on the tv"
+    - "open youtube"
+    - "play stranger things"
+    - "rewind 30 seconds"
+    - "fast forward a minute"
+    - "put on some chill beats"
+    - "play my running playlist"
+    - "what song is playing"
+    - "who sings this"
+    - "put on a show"
+    - "change the channel"
+  add_note:
+    - "remember that the ReSpeaker GPIO 6 controls the LED"
+    - "make a note that my medication is in the top drawer"
+    - "save this — the ATmega reset pin is active low"
+    - "remember my dentist appointment is on the 20th"
+    - "note that the recipe needs double the vanilla"
+    - "add a note about the wifi password"
+    - "store this — marilyn's birthday is June 15th"
+    - "log this note — the resistor value is 120 ohms"
+    - "jot this down — check the furnace filter in December"
+    - "remember this fact — the garage code is 4892"
+    - "save this — the dining chair screws are M6"
+    - "remember that the plant by the window needs water every 3 days"
+    - "make a note that Grim Dawn expansion is Forgotten Gods"
+    - "store the fact that the router password is on the back"
+    - "log this for me — the API key expires in March"
+    - "remember I left the toolbox in the garage"
+    - "note this down — the part number is ATmega328P"
+    - "save a note about the wiring — red is positive"
+    # lists / reminders / to-dos — same feature family (disabled); these
+    # drifted into chat_play and the reply pretended to add them (2026-10-06)
+    - "add milk to my shopping list"
+    - "add paper towels to the list"
+    - "what's on my grocery list"
+    - "remove eggs from the shopping list"
+    - "create a new list called packing"
+    - "add buy milk to my to do list"
+    - "mark buy milk as complete"
+    - "read my reminders"
+    - "remind me to call the doctor on monday"
+    - "remind me to water the plants every sunday"
+    - "add a meeting to my calendar"
+    - "what's on my calendar today"
 
-  calendar:
-    - "what's on my schedule today"
-    - "what do I have today"
-    - "any meetings today"
-    - "what's my next appointment"
-    - "what's on my calendar"
-    - "do I have anything tomorrow"
-    - "when is my next meeting"
-    - "what's coming up this week on my calendar"
-    - "any appointments this week"
-    - "check my schedule"
-    - "add an event to my calendar"
-    - "remind me about my dentist appointment"
-    - "when is my doctor visit"
+  # --------------------------------------------------
+  # Verify last — fact-checking the AI's prior response.
+  # Always references something just said or claimed.
+  # --------------------------------------------------
+    - "what's on my calendar this week"
+    - "do i have anything scheduled tomorrow"
+  verify_last:
+    - "is that right"
+    - "is that accurate"
+    - "are you sure about that"
+    - "fact check that"
+    - "can you double check that"
+    - "verify that for me"
+    - "that doesn't sound right, can you check"
+    - "is what you just said correct"
+    - "double check that claim"
+    - "I want to verify that"
+    - "is that information accurate"
+    - "can you confirm that's true"
+    - "fact-check what you just told me"
+    - "how confident are you in that"
+    - "check if that's actually correct"
+    - "verify that information please"
+    - "are you sure that's right"
 
-  # Direct internet queries — time-sensitive, news, events, live data.
-  # RAG won't have this. Goes straight to web.
+  # --------------------------------------------------
+  # System status — server health, container status,
+  # GPU, LLM uptime. NOT home device state (ha_sensor).
+  # --------------------------------------------------
+  system_status:
+    - "how are the servers doing"
+    - "what's the system status"
+    - "how is everything running"
+    - "check the server health"
+    - "how's the server performance"
+    - "are all the containers running"
+    - "what's the health of the system"
+    - "how's the LLM doing"
+    - "give me a system report"
+    - "are there any alerts"
+    - "how's the GPU doing"
+    - "is everything healthy"
+    - "check on the system for me"
+    - "how's the memory usage on the servers"
+    - "status report on the servers"
+    - "is the AI server running okay"
+    - "how are all the machines doing"
+    - "any server issues I should know about"
+    - "is the brain server healthy"
+    - "how's CPU usage looking"
+
+  # --------------------------------------------------
+  # List commands — asking what the assistant can do.
+  # --------------------------------------------------
+  list_commands:
+    - "what can you do"
+    - "show me the commands"
+    - "list what you're capable of"
+    - "what are my options"
+    - "what commands are available"
+    - "what can I ask you to do"
+    - "show me all the commands"
+    - "what features do you have"
+    - "give me a list of commands"
+    - "what are you able to do"
+    - "tell me what you can help with"
+    - "help me figure out what to ask you"
+    - "what's available to me"
+    - "run down what you can do"
+    - "what do you support"
+
+  # --------------------------------------------------
+  # Finance process — ADMIN-only batch pipeline trigger.
+  # Deliberately narrow — should not fire on general
+  # financial questions (those are web_search/general).
+  # --------------------------------------------------
+  finance_process:
+    - "process my finance files"
+    - "run the finance pipeline"
+    - "process my bank statements"
+    - "run my financial files"
+    - "ingest the finance files"
+    - "process the statements I uploaded"
+    - "run finance processing"
+    - "process my banking documents"
+    - "import my finance data"
+    - "analyze the finance files I dropped in"
+    - "run my finance imports"
+    - "process this month's statements"
+
+  # --------------------------------------------------
+  # Direct internet queries — time-sensitive, live data.
+  # Contrast with local_search (stored knowledge).
+  # --------------------------------------------------
   web_search:
     - "what's the latest on"
     - "what's in the news today"
@@ -149,30 +403,48 @@ buckets:
     - "what happened with"
     - "any updates on"
     - "what are people saying about"
-    - "search for the latest releases of"
     - "look up the latest version of"
-    - "find the latest news on"
     - "search online for"
     - "do a web search for"
     - "google that for me"
     - "search that up"
     - "search the web for"
     - "what does the community say about"
-    - "what do people think about"
     - "what's online about"
-    - "is there anything going on near me"
-    - "what's happening in the area this weekend"
     - "any events near me this weekend"
     - "what's going on in town"
     - "any local concerts or shows this weekend"
-    - "is there a festival near me"
     - "what's playing at the movies this weekend"
     - "any storms or weather concerns this week"
     - "is there a hurricane watch near me"
     - "is it safe to travel to"
+    # live facts the model can't know — scores, hours, prices, schedules.
+    # Without these the persona invented answers ("Lakers lost last night").
+    - "did the lakers win last night"
+    - "what's the score of the baseball game"
+    - "when do the eagles play next"
+    - "what time does the grocery store close"
+    - "is the pharmacy open right now"
+    - "how is the stock market doing"
+    - "what is the price of apple stock"
+    - "what's the exchange rate for dollars to euros"
+    - "is my flight on time"
+    - "is there traffic on the highway"
+    - "what movies are playing near me"
+    - "how much is a flight to new york"
 
-  # Local lookup — tries RAG first, falls back to web if nothing found.
-  # "look up X", "find info on X" — could be in local knowledge base.
+  # --------------------------------------------------
+  # Local lookup — stored notes, specs, recipes, how-to.
+  # Tries RAG first, falls back to web if nothing found.
+  # --------------------------------------------------
+    - "did the chiefs win"
+    - "when does costco close"
+    - "what are the store hours for target"
+    - "how are stocks doing today"
+    - "what's the status of my flight"
+    - "is the post office open today"
+    - "what's the price of gas"
+    - "what's the news this morning"
   local_search:
     - "look up the pinouts for"
     - "look up the specs for"
@@ -198,6 +470,179 @@ buckets:
     - "check my notes on"
     - "look in my notes for"
 
+  # --------------------------------------------------
+  # Clock — current time / date / weekday. No tool: the
+  # system header carries the house's local time. These
+  # used to land in timer_alarm (disabled) and got the
+  # "feature off" note (review 2026-10-06).
+  # --------------------------------------------------
+  clock:
+    - "what time is it"
+    - "what's the time"
+    - "what time is it right now"
+    - "what's the date"
+    - "what's today's date"
+    - "what day is it"
+    - "what day of the week is it"
+    - "is it the weekend"
+    - "what month is it"
+    - "what year is it"
+    - "how many days until friday"
+    - "what's the date tomorrow"
+
+  # --------------------------------------------------
+  # Chat play — things the model does in words: sing,
+  # games of chance, jokes, roasts, quotes, catchphrases.
+  # No tool. Several of these were pulled into media /
+  # timer buckets and refused (review 2026-10-06).
+  # --------------------------------------------------
+  chat_play:
+    - "sing me a song"
+    - "sing happy birthday"
+    - "do a beatbox"
+    - "bark like a dog"
+    - "meow"
+    - "roll a dice"
+    - "roll a d20"
+    - "flip a coin"
+    - "heads or tails"
+    - "pick a number between 1 and 10"
+    - "pick a card"
+    - "give me a random word"
+    - "tell me a joke"
+    - "tell me a knock knock joke"
+    - "knock knock"
+    - "who's there"
+    - "tell me a riddle"
+    - "tell me a story"
+    - "tell me a scary story"
+    - "insult me but make it a compliment"
+    - "roast me"
+    - "give me a backhanded compliment"
+    - "tell me a quote"
+    - "may the force be with you"
+    - "live long and prosper"
+    - "winter is coming"
+    - "beam me up scotty"
+    - "give me a yoga routine"
+    - "give me a quick workout"
+
+  # --------------------------------------------------
+  # Knowledge — factual questions the model answers from
+  # what it knows: facts, conversions, math, definitions,
+  # how-to. Gets the conservative "factual" profile.
+  # --------------------------------------------------
+  knowledge:
+    - "how many ounces in a cup"
+    - "convert 300 grams to ounces"
+    - "what is 15 percent of 80"
+    - "what's the capital of australia"
+    - "who wrote to kill a mockingbird"
+    - "how tall is mount everest"
+    - "what year did the titanic sink"
+    - "who won the oscar for best picture in 1994"
+    - "who is the president of france"
+    - "how many planets are in the solar system"
+    - "what is the atomic weight of carbon"
+    - "how do you boil an egg"
+    - "how long should i cook chicken breast"
+    - "what is a substitute for baking powder"
+    - "how do i get a wine stain out of a shirt"
+    - "how do you fix a leaky faucet"
+    - "what does schadenfreude mean"
+    - "how do you spell definitely"
+    - "translate thank you to spanish"
+    - "what are the side effects of ibuprofen"
+    - "who holds the record for most home runs"
+    - "why is the sky blue"
+    - "what is a black hole"
+
+  # --------------------------------------------------
+  # Unsupported — things the house can't do at all (phone, texts,
+  # deliveries, shopping, navigation, email). No tool; the router
+  # gives a fixed "can't do that" reply (router tune 2026-10-07).
+  # --------------------------------------------------
+  unsupported:
+    - "call my mom"
+    - "call jj"
+    - "make a phone call"
+    - "video call grandma"
+    - "text marilyn"
+    - "send a text to dad"
+    - "send a message to my brother"
+    - "read my messages"
+    - "read my texts"
+    - "answer the call"
+    - "hang up the call"
+    - "ring my phone"
+    - "where did i leave my phone"
+    - "track my order"
+    - "where's my package"
+    - "when will my delivery arrive"
+    - "order more dog food"
+    - "buy more coffee pods"
+    - "reorder toilet paper"
+    - "give me directions to the store"
+    - "navigate home"
+    - "how do i get to the mall from here"
+    - "send an email to my boss"
+    - "check my email"
+    - "post this on facebook"
+
+  # --------------------------------------------------
+  # Chat statements — feelings, opinions and small talk that
+  # merely mention a feature topic (music, sleep, time, notes,
+  # weather, computers, lights). Contrast for the action buckets;
+  # these were pulled into media/timer/notes (router tune 2026-10-07).
+  # --------------------------------------------------
+  chat_statement:
+    - "i love that song"
+    - "this album is so good"
+    - "i've been listening to a lot of jazz lately"
+    - "music helps me relax"
+    - "that show was amazing"
+    - "i watched a movie last night"
+    - "i'm exhausted"
+    - "i didn't sleep well"
+    - "i overslept today"
+    - "i'm always running late"
+    - "time goes by so fast"
+    - "i need a nap so bad"
+    - "i'm so proud of my project"
+    - "my code is a mess"
+    - "work was rough today"
+    - "i keep forgetting things"
+    - "i have so much to do this week"
+    - "school is stressing me out"
+    - "i love when it snows"
+    - "this heat is killing me"
+    - "rainy days make me sleepy"
+    - "my laptop is so slow"
+    - "the internet was down at work"
+    - "computers are so frustrating"
+    - "our neighbor's lights are so bright"
+    - "i want to redecorate my room"
+    - "nobody gets me"
+    - "i feel ignored"
+    - "i'm in a bad mood"
+    - "that's sus"
+    - "no cap that was crazy"
+    - "morning, leave me alone"
+    - "what would you do if you were human"
+    - "do you ever get bored"
+    - "can a computer have feelings"
+    - "what is your purpose"
+    - "my phone battery is low"
+    - "my sister texted me earlier"
+    - "i hate talking on the phone"
+    - "i got a weird call today"
+    - "my brother never answers his phone"
+    - "i'm going shopping later"
+    - "i ordered pizza tonight"
+
+  # --------------------------------------------------
+  # General conversational fallback.
+  # --------------------------------------------------
   general:
     - "what's up"
     - "how are you"
@@ -209,8 +654,6 @@ buckets:
     - "talk to me"
     - "what should I do"
     - "give me advice"
-    - "how is the server doing"
-    - "how is everything going"
     - "how does that work"
     - "what do you know about"
     - "tell me about"
@@ -219,3 +662,37 @@ buckets:
     - "I have a question"
     - "just checking in"
     - "what are you up to"
+    # questions about the assistant itself / arrivals — were pulled into
+    # ha_sensor and dumped device states (test run 2026-10-06)
+    - "do you sleep"
+    - "are you awake"
+    - "are you online"
+    - "are you connected to the internet"
+    - "how much battery do you have"
+    - "I'm home"
+    - "I'm back"
+    - "I'm leaving now"
+    - "good morning"
+    - "good night"
+
+  # --------------------------------------------------
+  # Think mode — explicit reasoning / analysis requests.
+  # Safety net for phrases not caught by the keyword
+  # pre-check in semantic_router.py.
+  # --------------------------------------------------
+  think_mode:
+    - "think about this carefully"
+    - "think through this for me"
+    - "really think about this"
+    - "take your time and think about"
+    - "reason through this"
+    - "reason this out"
+    - "think step by step"
+    - "think this through"
+    - "work through this carefully"
+    - "use your reasoning on this"
+    - "think hard about this"
+    - "carefully consider this"
+    - "analyze this deeply"
+    - "think before you answer"
+    - "don't rush, think about it"

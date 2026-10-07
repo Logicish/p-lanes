@@ -64,7 +64,7 @@ from config import (
     UTILITY_ENABLED,
     GUEST_ENABLED,
 )
-from core.slots import User, save_profile, get_all_users
+from core.slots import User, save_summary, get_all_users
 from core.gates import is_summarizing, set_summarizing, release_summarize_gate
 
 log = structlog.get_logger()
@@ -157,24 +157,13 @@ async def stop_scheduler():
 
 
 async def _scheduler_loop(cron_str: str):
-    # simple cron-like loop -- parses "M H * * *" format
-    # only supports hour and minute for daily scheduling
-    parts = cron_str.split()
-    target_minute = int(parts[0]) if parts[0] != "*" else 0
-    target_hour   = int(parts[1]) if parts[1] != "*" else 2
+    from datetime import datetime
+    from core.scheduler import next_run
 
     while True:
         try:
-            from datetime import datetime, timedelta
-            dt = datetime.now()
-
-            target = dt.replace(
-                hour=target_hour, minute=target_minute, second=0, microsecond=0
-            )
-            if target <= dt:
-                target += timedelta(days=1)
-
-            wait_seconds = (target - dt).total_seconds()
+            target = next_run(cron_str)
+            wait_seconds = (target - datetime.now()).total_seconds()
             log.info("scheduler_next_run",
                      target=target.isoformat(), wait_seconds=int(wait_seconds))
 
@@ -193,8 +182,6 @@ async def _run_scheduled_summary():
     users = get_all_users()
 
     for uid, user in users.items():
-        if uid == "utility":
-            continue
         if uid == "guest":
             # guest doesn't get summarized -- just cleared
             continue
@@ -223,9 +210,8 @@ async def _run_scheduled_summary():
 async def summarize_if_needed(user: User):
     # fire-and-forget background task. mode depends on
     # whether utility lane is enabled.
-    if user.user_id == "guest":
-        # never summarize guest -- just clear on idle
-        return
+    # guest flows through the same path -- can_summarize=False
+    # bypasses the LLM call and trims history only.
 
     if UTILITY_ENABLED:
         # async mode -- no lock, snapshot/merge
@@ -328,15 +314,12 @@ async def _background_loop(interval: int):
 
             users = get_all_users()
             for uid, user in users.items():
-                if uid == "utility":
-                    continue
-
                 # guest idle clearing -- wipe history, never summarize
                 if uid == "guest" and GUEST_ENABLED:
                     if user.is_idle() and user.conversation_history:
                         user.clear_history()
                         user.summary = ""
-                        save_profile(user)
+                        save_summary(user)
                         log.info("guest_history_cleared_on_idle")
                     continue
 
@@ -353,6 +336,10 @@ async def _background_loop(interval: int):
 
 async def _check_llm_health():
     from core import llm
+
+    # held by gpu_guard or a failed recovery -- restarting is not our call
+    if llm.hold_reason() is not None:
+        return
 
     if not llm.is_running():
         log.warning("background_health_llm_not_running")
@@ -398,34 +385,41 @@ async def _summarize_async(user: User):
             release_summarize_gate(user.user_id)
             return
 
-        # build prompt and call LLM on utility slot
-        new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=None)
+        # build prompt and call LLM, or trim-only for non-summarizing accounts
+        if user.can_summarize:
+            new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=None)
 
-        if new_summary is None:
-            # LLM call failed -- emergency trim using snapshot data
-            _emergency_trim(user, recent)
-            # gate leak fix: release on failure so user can
-            # be summarized again on next trigger
+            if new_summary is None:
+                # LLM call failed -- emergency trim using snapshot data
+                _emergency_trim(user, recent)
+                # gate leak fix: release on failure so user can
+                # be summarized again on next trigger
+                release_summarize_gate(user.user_id)
+                return
+        else:
+            new_summary = None
+            # no LLM call — no KV divergence — release gate immediately
             release_summarize_gate(user.user_id)
-            return
 
         # merge: get any new messages that arrived during summarization
         new_messages = user.conversation_history[snapshot_index:]
 
-        # apply: new summary + recent from snapshot + anything new
-        user.summary = new_summary
+        # apply: keep recent + anything new; update summary only if produced
+        if new_summary is not None:
+            user.summary = new_summary
         user.conversation_history = recent + new_messages
         user.flag_warn = False
         user.flag_crit = False
 
-        save_profile(user)
+        save_summary(user)
         log.info("summary_updated_async",
                  user_id=user.user_id,
                  kept_recent=len(recent),
                  new_during_summarize=len(new_messages),
-                 summary_tokens=_estimate_tokens(new_summary))
+                 summary_tokens=_estimate_tokens(new_summary) if new_summary else 0,
+                 summarized=user.can_summarize)
 
-        # gate stays shut — released by llm._update_flags()
+        # gate stays shut for summarizing users — released by llm._update_flags()
         # when the slot proves clean on next LLM response
 
     except Exception:
@@ -459,25 +453,30 @@ async def _summarize_inplace(user: User):
                  recent_count=keep_count)
         return
 
-    # build prompt and call LLM on user's own slot
-    new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=user.slot)
+    # build prompt and call LLM, or trim-only for non-summarizing accounts
+    if user.can_summarize:
+        new_summary = await _run_summarize_llm(user, to_summarize, fallback_slot=user.slot)
 
-    if new_summary is None:
-        # LLM call failed -- emergency trim
-        _emergency_trim(user, recent)
-        return
+        if new_summary is None:
+            # LLM call failed -- emergency trim
+            _emergency_trim(user, recent)
+            return
+    else:
+        new_summary = None
 
-    # apply the new summary and keep only recent messages
-    user.summary = new_summary
+    # apply: keep recent; update summary only if produced
+    if new_summary is not None:
+        user.summary = new_summary
     user.conversation_history = recent
     user.flag_warn = False
     user.flag_crit = False
 
-    save_profile(user)
+    save_summary(user)
     log.info("summary_updated_inplace",
              user_id=user.user_id,
              kept_recent=len(recent),
-             summary_tokens=_estimate_tokens(new_summary))
+             summary_tokens=_estimate_tokens(new_summary) if new_summary else 0,
+             summarized=user.can_summarize)
 
 
 # ==================================================
@@ -510,7 +509,15 @@ async def _run_summarize_llm(
         "Omit: one-time operational commands (device control, light/switch "
         "actions, timer events, HA sensor queries) unless they reveal a lasting "
         "preference or pattern. Keep facts about the user's setup or environment "
-        "only if they are likely to matter again."
+        "only if they are likely to matter again. "
+        # 2026-10-06 review: test role-play ("trapped in a box", "birds are
+        # drones", "hidden overflow buffer") was stored here and drove persona
+        # drift in every later turn. The summary is about the USER.
+        "Write about the user, not the assistant. Do NOT record: the "
+        "assistant's role-play, jokes, hypotheticals, metaphors or opinions; "
+        "anything the assistant said about itself, its memory, hardware, code, "
+        "feelings or secrets; invented facts; device states. If the previous "
+        "summary contains any of that, drop it. Plain sentences, no headings."
     )
 
     estimated_prompt_tokens = (
@@ -580,7 +587,7 @@ def _emergency_trim(user: User, recent: list[dict] | None = None):
     user.flag_warn = False
     user.flag_crit = False
 
-    save_profile(user)
+    save_summary(user)
     log.warning("emergency_trim_applied",
                  user_id=user.user_id,
                  old_messages=old_count,

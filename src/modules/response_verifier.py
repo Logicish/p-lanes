@@ -82,7 +82,7 @@ No explanation. One word only: CLEAR or DIRTY."""
 @register("response_verifier", "responder")
 async def respond(ctx: PipelineContext) -> PipelineContext:
     # only verify LLM-generated responses
-    if ctx.skip_processor or not ctx.response_text:
+    if not ctx.response_text:
         return ctx
 
     if ctx.intent not in _VERIFY_INTENTS:
@@ -143,7 +143,7 @@ async def _verify_background(
 
 
 async def _check_pii(text: str, fallback_slot: int) -> str:
-    """Ask the local utility lane whether the text contains PII.
+    """Ask the local LLM (guest slot) whether the text contains PII.
     Returns 'CLEAR' or 'DIRTY'. Fails safe to 'DIRTY' on any error.
     """
     from core.llm import call_internal

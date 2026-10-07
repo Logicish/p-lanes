@@ -32,35 +32,15 @@
 # Imports
 # ==================================================
 import asyncio
-import json
-import re
+import datetime
 
-import aiohttp
 import structlog
 
-from config import LLM_URL
 from core.broadcast import publish
-from core.events import register
 from core.pipeline import PipelineContext
+from core.tool_registry import tool
 
 log = structlog.get_logger()
-
-# ==================================================
-# LLM extraction prompt
-# ==================================================
-
-_TIMER_SYSTEM = """\
-You are a timer parser. Extract the duration from the user message.
-Respond ONLY with a single line of valid JSON. No explanation, no markdown.
-
-Format: {"seconds": 300, "label": "pasta"}
-
-Rules:
-- seconds: total duration in seconds (integer)
-- label: short description of what the timer is for, or "" if not specified
-- Convert minutes/hours: "5 minutes" = 300, "1 hour" = 3600, "90 seconds" = 90
-- If no duration can be determined, respond: {"error": "unclear"}\
-"""
 
 # ==================================================
 # Helpers
@@ -84,32 +64,6 @@ def _friendly_duration(seconds: int) -> str:
     return s
 
 
-async def _extract_timer(message: str) -> dict | None:
-    payload = {
-        "model":       "local",
-        "messages":    [
-            {"role": "system", "content": _TIMER_SYSTEM},
-            {"role": "user",   "content": message},
-        ],
-        "temperature": 0.1,
-        "max_tokens":  64,
-    }
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.post(LLM_URL, json=payload) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                text = data["choices"][0]["message"]["content"].strip()
-                return json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    except Exception as e:
-        log.error("timer_extract_failed", error=str(e))
-        return None
-
 
 async def _run_timer(user_id: str, seconds: int, label: str) -> None:
     """Sleep then push an alert to the user via broadcast."""
@@ -119,34 +73,39 @@ async def _run_timer(user_id: str, seconds: int, label: str) -> None:
     log.info("timer_fired", user_id=user_id, seconds=seconds, label=label)
 
 
-# ==================================================
-# Classifier
-# ==================================================
 
-@register("timer", "classifier")
-async def handle(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent != "timer_alarm":
-        return ctx
+def _seconds_until(target: str) -> int | None:
+    """Parse HH:MM target time and return seconds until it fires today."""
+    try:
+        h, m   = map(int, target.strip().split(":"))
+        now    = datetime.datetime.now()
+        target_dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        delta  = int((target_dt - now).total_seconds())
+        return delta if delta > 0 else delta + 86400   # wrap to next day if past
+    except Exception:
+        return None
 
-    ctx.skip_processor = True
 
-    parsed = await _extract_timer(ctx.raw_message)
+@tool("set_timer")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
+    duration_seconds = args.get("duration_seconds")
+    target_time      = (args.get("target_time") or "").strip()
+    label            = (args.get("label") or "").strip()
 
-    if parsed is None or "error" in parsed:
-        ctx.response_text = "I couldn't figure out the duration. Try something like 'set a timer for 10 minutes'."
-        return ctx
+    if duration_seconds is not None:
+        seconds = int(duration_seconds)
+        if seconds <= 0:
+            return "That doesn't seem like a valid duration."
+        asyncio.create_task(_run_timer(ctx.user.user_id, seconds, label))
+        log.info("set_timer_tool_ok", seconds=seconds, label=label)
+        return f"Timer set for {_friendly_duration(seconds)}" + (f" — {label}" if label else "") + "."
 
-    seconds = int(parsed.get("seconds", 0))
-    label   = parsed.get("label", "").strip()
+    if target_time:
+        seconds = _seconds_until(target_time)
+        if seconds is None:
+            return f"I couldn't parse the target time '{target_time}'."
+        asyncio.create_task(_run_timer(ctx.user.user_id, seconds, label or "alarm"))
+        log.info("set_timer_alarm_tool_ok", target_time=target_time, seconds=seconds)
+        return f"Alarm set for {target_time}" + (f" — {label}" if label else "") + "."
 
-    if seconds <= 0:
-        ctx.response_text = "That doesn't seem like a valid duration."
-        return ctx
-
-    asyncio.create_task(_run_timer(ctx.user.user_id, seconds, label))
-
-    duration = _friendly_duration(seconds)
-    ctx.response_text = f"Timer set for {duration}" + (f" — {label}" if label else "") + "."
-
-    log.info("timer_started", user_id=ctx.user.user_id, seconds=seconds, label=label)
-    return ctx
+    return "I need a duration or target time for the timer."

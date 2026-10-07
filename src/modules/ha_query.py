@@ -5,120 +5,115 @@
 # Date:    4/2/2026
 #
 # ==================================================
-# Home Assistant read-only query module.
-# Intercepts the 'ha_sensor' intent and answers
-# questions about current device/sensor state
-# without making any changes.
+# Home Assistant read-only state enricher.
+# Intercepts the 'ha_sensor' intent and injects
+# relevant entity states into ctx.enrichments so
+# the main LLM processor answers through the user's
+# persona.
 #
-# Flow:
-#   1. Fetch relevant entity states from the HA provider.
-#   2. Pass the state snapshot + user question to the LLM.
-#   3. LLM answers in natural language.
-#   4. Sets skip_processor = True — stays out of
-#      the user's conversation slot.
+# The semantic router's tier 2 match populates
+# ctx.metadata["ha_domains"] with a narrowed domain
+# list. If absent, falls back to all controllable
+# domains. Keeping the snapshot lean reduces prompt
+# size and improves answer quality.
 #
-# Security: USER (1) via module_permissions — jj and
-# above can query, guest cannot.
+# Does NOT set skip_processor — the persona handles
+# the response, keeping the exchange in conversation
+# history.
+#
+# Security: USER (1) via module_permissions.
 #
 # Knows about: core/events (register),
 #              core/pipeline (PipelineContext),
-#              providers (get_provider),
-#              config (LLM_URL).
+#              providers (get_provider).
 # ==================================================
 
 # ==================================================
 # Imports
 # ==================================================
-import aiohttp
+from datetime import datetime
+
 import structlog
 
 import providers
-from config import LLM_URL
-from core.events import register
+from config import device_excluded, TIMEZONE
 from core.pipeline import PipelineContext
+from core.tool_registry import tool
 
 log = structlog.get_logger()
 
-# ==================================================
-# LLM answer prompt
-# ==================================================
-
-_QUERY_SYSTEM = """\
-You are a home assistant state reader. Answer the user's question using ONLY the entity states provided.
-Be brief and natural — one or two sentences. Do not suggest changes or offer to control anything.
-If the relevant entity is not in the list, say you don't have that sensor.\
-"""
+_DEFAULT_DOMAINS = [
+    "light", "switch", "climate", "lock",
+    "cover", "fan", "sensor", "binary_sensor", "input_boolean",
+]
 
 
-# ==================================================
-# Helpers
-# ==================================================
+# plain words for "there are no … in the house" so the persona can
+# repeat the result verbatim ("lock devices" read as a broken tool)
+_DOMAIN_WORDS = {
+    "lock": "smart locks", "climate": "thermostats or AC units",
+    "cover": "garage doors, blinds or shades", "camera": "cameras",
+    "vacuum": "robot vacuums", "media_player": "TVs or speakers",
+    "binary_sensor": "door, window or motion sensors", "fan": "fans",
+    "switch": "smart plugs or switches", "light": "smart lights",
+    "sensor": "sensors",
+}
+
+_SUN_LABELS = {
+    "sensor.sun_next_rising":  "Next sunrise",
+    "sensor.sun_next_setting": "Next sunset",
+    "sensor.sun_next_dawn":    "Next dawn",
+    "sensor.sun_next_dusk":    "Next dusk",
+}
+
+
+def _local(ts: str) -> str:
+    # HA reports sun times in UTC ISO — show the house's local clock
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(TIMEZONE)
+        return dt.strftime("%A %-I:%M %p")
+    except ValueError:
+        return ts
+
+
+async def _sun_times(ha) -> str:
+    states = await ha.get_states(domains=["sensor"]) or []
+    lines = [f"{_SUN_LABELS[s['entity_id']]}: {_local(s.get('state', ''))}"
+             for s in states if s["entity_id"] in _SUN_LABELS]
+    return "\n".join(sorted(lines)) or "Sunrise and sunset times are not available."
+
 
 def _build_state_snapshot(states: list[dict]) -> str:
-    """Build a readable state snapshot for the LLM."""
     lines = []
     for s in states:
-        eid        = s["entity_id"]
-        name       = s.get("attributes", {}).get("friendly_name", eid)
-        state      = s.get("state", "unknown")
-        unit       = s.get("attributes", {}).get("unit_of_measurement", "")
-        value      = f"{state} {unit}".strip()
-        lines.append(f"{name}: {value}")
+        eid   = s["entity_id"]
+        name  = s.get("attributes", {}).get("friendly_name", eid)
+        state = s.get("state", "unknown")
+        unit  = s.get("attributes", {}).get("unit_of_measurement", "")
+        lines.append(f"{name}: {state}{(' ' + unit) if unit else ''}")
     return "\n".join(lines)
 
 
-# ==================================================
-# Classifier
-# ==================================================
 
-@register("ha_query", "enricher")
-async def handle(ctx: PipelineContext) -> PipelineContext:
-    if ctx.intent != "ha_sensor":
-        return ctx
-
+@tool("query_home_state")
+async def _execute(args: dict, ctx: PipelineContext) -> str:
     ha = providers.get_provider("homeassistant")
     if ha is None or not ha.is_ready:
-        log.warning("ha_provider_unavailable", user_id=ctx.user.user_id)
-        return ctx
+        return "Home assistant is not connected."
 
-    ctx.skip_processor = True
+    # a router keyword hint ("garage" → cover) is more reliable than the tool
+    # LLM's pick ("is the laundry done" → ["sensor"] dumped 115 sensors and the
+    # sun times); then the LLM's domains, then everything controllable
+    domains = (ctx.metadata.get("ha_domains") or args.get("domains")
+               or _DEFAULT_DOMAINS)
 
-    # fetch all relevant states — include sensors for queries
-    states = await ha.get_states(
-        domains=["light", "switch", "climate", "lock", "cover",
-                 "fan", "sensor", "binary_sensor", "input_boolean"]
-    )
+    if "sun" in domains:
+        return await _sun_times(ha)
+
+    states = [s for s in (await ha.get_states(domains=domains) or []) if not device_excluded(s)]
     if not states:
-        ctx.response_text = "I can't reach Home Assistant right now."
-        return ctx
+        words = ", ".join(_DOMAIN_WORDS.get(d, d) for d in domains)
+        return f"There are no {words} connected to the house system."
 
-    snapshot   = _build_state_snapshot(states)
-    user_content = f"Current home state:\n{snapshot}\n\nUser question: {ctx.raw_message}"
-
-    payload = {
-        "model":       "local",
-        "messages":    [
-            {"role": "system", "content": _QUERY_SYSTEM},
-            {"role": "user",   "content": user_content},
-        ],
-        "temperature": 0.3,
-        "max_tokens":  128,
-    }
-
-    try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.post(LLM_URL, json=payload) as resp:
-                if resp.status != 200:
-                    log.warning("ha_query_llm_bad_status", status=resp.status)
-                    ctx.response_text = "I couldn't get a response from the assistant."
-                    return ctx
-                data = await resp.json()
-                ctx.response_text = data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        log.error("ha_query_llm_failed", error=str(e))
-        ctx.response_text = "Something went wrong fetching the home state."
-
-    log.info("ha_query_answered", user_id=ctx.user.user_id)
-    return ctx
+    log.info("query_home_state_tool_ok", domains=domains, entity_count=len(states))
+    return _build_state_snapshot(states)

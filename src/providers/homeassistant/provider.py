@@ -38,6 +38,7 @@ class HomeAssistantProvider(Provider):
         self._timeout:            int       = cfg.get("timeout", 10)
         self._domains:            list      = cfg.get("domains", ["light", "switch", "climate", "lock"])
         self._exclude_entity_ids: set[str]  = set(cfg.get("exclude_entity_ids", []))
+        self._hidden_entity_ids:  set[str]  = set(cfg.get("hidden_entities", []))
         self._weather_entity:     str       = cfg.get("weather_entity", "weather.forecast_home")
         self._session: aiohttp.ClientSession | None = None
         self._ready:   bool = False
@@ -57,6 +58,10 @@ class HomeAssistantProvider(Provider):
     @property
     def exclude_entity_ids(self) -> set[str]:
         return self._exclude_entity_ids
+
+    @property
+    def hidden_entity_ids(self) -> set[str]:
+        return self._hidden_entity_ids
 
     @property
     def weather_entity(self) -> str:
