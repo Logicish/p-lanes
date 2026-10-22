@@ -1,0 +1,13 @@
+p-lanes is licensed under the GNU AGPL-3.0.
+
+This is a Copyleft project: you are free to modify and share it, but any derivative works must also be open-source, keep all original author attributions, and be licensed under the AGPL.
+
+Third-Party Components
+p-lanes is an orchestrator. It does not bundle or depend on any specific STT or TTS engine — these are swappable providers. The following are commonly used with p-lanes, and their respective licenses remain in effect:
+
+llama.cpp: MIT License (required — the inference backend)
+Whisper: MIT License (default STT provider, swappable)
+Kokoro: Apache 2.0 License (default TTS provider, swappable)
+Piper: MIT License (alternative TTS provider)
+
+Original Author: Logicish (2026)
