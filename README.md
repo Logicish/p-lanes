@@ -118,7 +118,7 @@ Version numbers are `0.MAJOR.MINOR` while the project is pre-release: the middle
 
 ## License
 
-p-lanes is licensed under the **GNU AGPL-3.0**. You're free to modify and share it; derivative works must stay open source under the AGPL and keep the original attribution.
+p-lanes is licensed under the **GNU AGPL-3.0**. You're free to modify and share it; derivative works must stay open source under the AGPL and keep the original attribution. Full text in [LICENSE](LICENSE); third-party notes in [NOTICE](NOTICE).
 
 p-lanes doesn't bundle its backends. It requires **llama.cpp** (MIT) for inference; everything else is a swappable provider.
 
